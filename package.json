@@ -1,0 +1,29 @@
+{
+  "name": "ai-hub",
+  "version": "1.0.0",
+  "description": "AI Hub - AI-driven fault healing and requirement delivery",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.39",
+    "@hono/node-server": "^1.19.9",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^17.2.4",
+    "hono": "^4.11.9",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.2.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
