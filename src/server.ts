@@ -19,38 +19,10 @@ import type { ChatProvider } from "./chat/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHealingWorkflow } {
+export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHealingWorkflow | null } {
   const env = loadEnv();
   const db = createDb(resolve("ai-hub.db"));
   const store = new TaskStore(db);
-  const larkClient = getLarkClient({
-    appId: env.LARK_APP_ID,
-    appSecret: env.LARK_APP_SECRET,
-  });
-
-  // Load skill content
-  const skillPath = resolve(__dirname, "skills", "fault-healing.md");
-  const skillContent = readFileSync(skillPath, "utf-8");
-
-  // Build agent config
-  const agentConfig = {
-    workspaceDir: env.WORKSPACE_DIR,
-    sentryConfig: {
-      authToken: env.SENTRY_AUTH_TOKEN,
-      org: env.SENTRY_ORG,
-      project: env.SENTRY_PROJECT,
-    },
-    skillContent,
-    env: { GH_TOKEN: env.GH_TOKEN },
-  };
-
-  // Create workflow
-  const workflow = new FaultHealingWorkflow({
-    store,
-    runAgent: (prompt) => runAgent(prompt, agentConfig),
-    sendLarkCard: (card) =>
-      sendLarkCard(larkClient, env.LARK_NOTIFY_CHAT_ID, card),
-  });
 
   // Build Hono app
   const app = new Hono();
@@ -65,25 +37,54 @@ export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHeali
     return c.json(task);
   });
 
-  // Sentry webhook — triggers analysis asynchronously
-  sentryWebhook(app, store, (taskId) => {
-    workflow.runAnalysis(taskId).catch((err) => {
-      console.error(
-        `[workflow] Analysis failed for task ${taskId}:`,
-        err,
-      );
-    });
-  });
+  // --- Fault Healing Pipeline (requires Sentry + Lark + GitHub config) ---
+  let workflow: FaultHealingWorkflow | null = null;
 
-  // Lark callback — handles button clicks
-  larkCallback(app, store, (taskId, action) => {
-    workflow.handleAction(taskId, action).catch((err) => {
-      console.error(
-        `[workflow] Action "${action}" failed for task ${taskId}:`,
-        err,
-      );
+  if (env.SENTRY_AUTH_TOKEN && env.SENTRY_ORG && env.SENTRY_PROJECT &&
+      env.LARK_APP_ID && env.LARK_APP_SECRET && env.LARK_NOTIFY_CHAT_ID &&
+      env.ANTHROPIC_API_KEY && env.GH_TOKEN) {
+    const larkClient = getLarkClient({
+      appId: env.LARK_APP_ID,
+      appSecret: env.LARK_APP_SECRET,
     });
-  });
+
+    const skillPath = resolve(__dirname, "skills", "fault-healing.md");
+    const skillContent = readFileSync(skillPath, "utf-8");
+
+    const agentConfig = {
+      workspaceDir: env.WORKSPACE_DIR,
+      sentryConfig: {
+        authToken: env.SENTRY_AUTH_TOKEN,
+        org: env.SENTRY_ORG,
+        project: env.SENTRY_PROJECT,
+      },
+      skillContent,
+      env: { GH_TOKEN: env.GH_TOKEN },
+    };
+
+    workflow = new FaultHealingWorkflow({
+      store,
+      runAgent: (prompt) => runAgent(prompt, agentConfig),
+      sendLarkCard: (card) =>
+        sendLarkCard(larkClient, env.LARK_NOTIFY_CHAT_ID!, card),
+    });
+
+    sentryWebhook(app, store, (taskId) => {
+      workflow!.runAnalysis(taskId).catch((err) => {
+        console.error(`[workflow] Analysis failed for task ${taskId}:`, err);
+      });
+    });
+
+    larkCallback(app, store, (taskId, action) => {
+      workflow!.handleAction(taskId, action).catch((err) => {
+        console.error(`[workflow] Action "${action}" failed for task ${taskId}:`, err);
+      });
+    });
+
+    console.log("[init] Fault healing pipeline enabled");
+  } else {
+    console.log("[init] Fault healing pipeline disabled (missing Sentry/Lark/GitHub config)");
+  }
 
   // --- Chat Assistant ---
   let chatProvider: ChatProvider;
@@ -98,7 +99,7 @@ export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHeali
     chatProvider = new ClaudeProvider({
       workspaceDir: env.WORKSPACE_DIR,
       skillContent: env.CHAT_SYSTEM_PROMPT,
-      env: { GH_TOKEN: env.GH_TOKEN },
+      env: env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {},
     });
   }
 
