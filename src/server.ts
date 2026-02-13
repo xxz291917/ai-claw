@@ -15,6 +15,9 @@ import { FaultHealingWorkflow } from "./workflows/fault-healing.js";
 import { chatRouter } from "./chat/router.js";
 import { ClaudeProvider } from "./chat/claude-provider.js";
 import { GenericProvider } from "./chat/generic-provider.js";
+import { buildSystemPrompt } from "./chat/system-prompt.js";
+import { createSentryQueryTool } from "./agent/tools/sentry-query.js";
+import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import type { ChatProvider } from "./chat/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -87,19 +90,54 @@ export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHeali
   }
 
   // --- Chat Assistant ---
+  // Build tools list for system prompt
+  const chatTools: string[] = [];
+  let chatMcpServers: Record<string, unknown> | undefined;
+
+  if (env.SENTRY_AUTH_TOKEN && env.SENTRY_ORG && env.SENTRY_PROJECT) {
+    const sentryTool = createSentryQueryTool({
+      authToken: env.SENTRY_AUTH_TOKEN,
+      org: env.SENTRY_ORG,
+      project: env.SENTRY_PROJECT,
+    });
+    const mcpServer = createSdkMcpServer({
+      name: "ai-hub-tools",
+      tools: [
+        tool(
+          sentryTool.name,
+          sentryTool.description,
+          sentryTool.inputSchema,
+          sentryTool.handler,
+        ),
+      ],
+    });
+    chatMcpServers = { "ai-hub-tools": mcpServer };
+    chatTools.push(
+      "`sentry_query(issue_id)` — Query Sentry for issue details, stacktrace, affected users",
+    );
+  }
+
+  // Build rich system prompt with project knowledge + skills
+  const systemPrompt = buildSystemPrompt({
+    workspaceDir: env.WORKSPACE_DIR,
+    skillsDir: resolve(__dirname, "skills"),
+    tools: chatTools,
+  });
+
   let chatProvider: ChatProvider;
   if (env.CHAT_PROVIDER === "generic" && env.CHAT_API_BASE && env.CHAT_API_KEY) {
     chatProvider = new GenericProvider({
       baseUrl: env.CHAT_API_BASE,
       apiKey: env.CHAT_API_KEY,
       model: env.CHAT_MODEL ?? "deepseek-chat",
-      systemPrompt: env.CHAT_SYSTEM_PROMPT,
+      systemPrompt,
     });
   } else {
     chatProvider = new ClaudeProvider({
       workspaceDir: env.WORKSPACE_DIR,
-      skillContent: env.CHAT_SYSTEM_PROMPT,
+      skillContent: systemPrompt,
       env: env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {},
+      mcpServers: chatMcpServers,
     });
   }
 
