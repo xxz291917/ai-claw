@@ -138,6 +138,7 @@ async function send() {
   appendMsg("user", text);
 
   const assistantEl = appendMsg("assistant", "");
+  const textEl = assistantEl.querySelector(".text-content");
   let fullText = "";
 
   try {
@@ -167,16 +168,16 @@ async function send() {
 
         if (event.type === "text") {
           fullText += event.content;
-          assistantEl.querySelector(".content").textContent = fullText;
+          textEl.textContent = fullText;
           messagesEl.scrollTop = messagesEl.scrollHeight;
         } else if (event.type === "tool_use") {
           const badge = document.createElement("span");
           badge.className = "tool-badge";
           badge.textContent = event.tool;
-          assistantEl.querySelector(".content").appendChild(badge);
+          assistantEl.querySelector(".tools").appendChild(badge);
         } else if (event.type === "error") {
           fullText += "\n[Error: " + event.message + "]";
-          assistantEl.querySelector(".content").textContent = fullText;
+          textEl.textContent = fullText;
         } else if (event.type === "done") {
           sessionId = event.sessionId || sessionId;
           if (event.costUsd > 0) {
@@ -189,11 +190,11 @@ async function send() {
       }
     }
   } catch (err) {
-    assistantEl.querySelector(".content").textContent = "[Connection error]";
+    textEl.textContent = "[Connection error]";
   }
 
   if (!fullText) {
-    assistantEl.querySelector(".content").textContent = "[No response]";
+    textEl.textContent = "[No response]";
   }
 
   sending = false;
@@ -204,10 +205,13 @@ async function send() {
 function appendMsg(role, text) {
   const el = document.createElement("div");
   el.className = "msg " + role;
-  const content = document.createElement("span");
-  content.className = "content";
-  content.textContent = text;
-  el.appendChild(content);
+  const tools = document.createElement("div");
+  tools.className = "tools";
+  el.appendChild(tools);
+  const textContent = document.createElement("span");
+  textContent.className = "text-content";
+  textContent.textContent = text;
+  el.appendChild(textContent);
   messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return el;

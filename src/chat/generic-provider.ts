@@ -69,14 +69,22 @@ export class GenericProvider implements ChatProvider {
         body.tools = openaiTools;
       }
 
-      const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${this.config.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify(body),
+        });
+      } catch (err: any) {
+        yield { type: "error", message: `Network error: ${err.message}` };
+        yield { type: "done", sessionId, costUsd: 0 };
+        this.sessions.set(sessionId, messages);
+        return;
+      }
 
       if (!res.ok || !res.body) {
         yield { type: "error", message: `API error: ${res.status}` };
