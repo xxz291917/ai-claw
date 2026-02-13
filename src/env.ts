@@ -12,6 +12,17 @@ const envSchema = z.object({
   GITHUB_REPO: z.string().min(1),
   PORT: z.coerce.number().default(8080),
   WORKSPACE_DIR: z.string().min(1),
+
+  // Chat assistant
+  CHAT_PROVIDER: z.enum(["claude", "generic"]).default("claude"),
+  CHAT_MODEL: z.string().optional(),
+  CHAT_API_BASE: z.string().optional(),
+  CHAT_API_KEY: z.string().optional(),
+  CHAT_SYSTEM_PROMPT: z
+    .string()
+    .default(
+      "You are a helpful engineering assistant. You have access to code tools (bash, read, write, edit, grep, glob) and can help with any engineering task.",
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;

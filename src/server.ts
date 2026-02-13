@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,10 @@ import { runAgent } from "./agent/runner.js";
 import { getLarkClient, sendLarkCard } from "./lark/notify.js";
 import { larkCallback } from "./lark/callback.js";
 import { FaultHealingWorkflow } from "./workflows/fault-healing.js";
+import { chatRouter } from "./chat/router.js";
+import { ClaudeProvider } from "./chat/claude-provider.js";
+import { GenericProvider } from "./chat/generic-provider.js";
+import type { ChatProvider } from "./chat/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -80,6 +85,28 @@ export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHeali
     });
   });
 
+  // --- Chat Assistant ---
+  let chatProvider: ChatProvider;
+  if (env.CHAT_PROVIDER === "generic" && env.CHAT_API_BASE && env.CHAT_API_KEY) {
+    chatProvider = new GenericProvider({
+      baseUrl: env.CHAT_API_BASE,
+      apiKey: env.CHAT_API_KEY,
+      model: env.CHAT_MODEL ?? "deepseek-chat",
+      systemPrompt: env.CHAT_SYSTEM_PROMPT,
+    });
+  } else {
+    chatProvider = new ClaudeProvider({
+      workspaceDir: env.WORKSPACE_DIR,
+      skillContent: env.CHAT_SYSTEM_PROMPT,
+      env: { GH_TOKEN: env.GH_TOKEN },
+    });
+  }
+
+  chatRouter(app, chatProvider);
+
+  // Serve static files (chat UI)
+  app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
+
   return { app, store, workflow };
 }
 
@@ -93,6 +120,8 @@ AI Hub 服务已启动
 
   地址:     http://localhost:${info.port}
   健康检查: http://localhost:${info.port}/health
+
+  Chat:    http://localhost:${info.port}/
 
   Webhooks:
     Sentry:  POST http://localhost:${info.port}/webhooks/sentry
