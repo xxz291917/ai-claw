@@ -26,7 +26,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHealingWorkflow | null } {
   const env = loadEnv();
-  const db = createDb(resolve("ai-hub.db"));
+  const db = createDb(resolve("data/ai-hub.db"));
   const store = new TaskStore(db);
 
   // Build Hono app
@@ -94,7 +94,8 @@ export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHeali
   // --- Chat Assistant ---
   const skillsDir = resolve(__dirname, "skills");
   const chatToolDescriptions: string[] = [];
-  const mcpTools: Array<ReturnType<typeof tool>> = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mcpTools: Array<ReturnType<typeof tool<any>>> = [];
   const genericTools: ToolDef[] = [];
 
   // get_skill tool (always available)
