@@ -18,7 +18,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("fault-healing");
   });
 
-  it("should include skills from skills directory", () => {
+  it("should include skill summaries and get_skill guidance", () => {
     const prompt = buildSystemPrompt({
       workspaceDir: projectRoot,
       skillsDir: resolve(projectRoot, "src/skills"),
@@ -26,6 +26,7 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).toContain("Available Skills");
     expect(prompt).toContain("fault-healing");
+    expect(prompt).toContain("get_skill");
   });
 
   it("should include custom tools when provided", () => {

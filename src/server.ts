@@ -17,7 +17,9 @@ import { ClaudeProvider } from "./chat/claude-provider.js";
 import { GenericProvider } from "./chat/generic-provider.js";
 import { buildSystemPrompt } from "./chat/system-prompt.js";
 import { createSentryQueryTool } from "./agent/tools/sentry-query.js";
+import { createSkillReaderTool } from "./agent/tools/skill-reader.js";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import type { ToolDef } from "./chat/generic-provider.js";
 import type { ChatProvider } from "./chat/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -90,38 +92,71 @@ export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHeali
   }
 
   // --- Chat Assistant ---
-  // Build tools list for system prompt
-  const chatTools: string[] = [];
-  let chatMcpServers: Record<string, unknown> | undefined;
+  const skillsDir = resolve(__dirname, "skills");
+  const chatToolDescriptions: string[] = [];
+  const mcpTools: Array<ReturnType<typeof tool>> = [];
+  const genericTools: ToolDef[] = [];
 
+  // get_skill tool (always available)
+  const skillReader = createSkillReaderTool(skillsDir);
+  mcpTools.push(
+    tool(skillReader.name, skillReader.description, skillReader.inputSchema, skillReader.handler),
+  );
+  genericTools.push({
+    name: skillReader.name,
+    description: skillReader.description,
+    parameters: {
+      type: "object",
+      properties: {
+        skill_name: { type: "string", description: "Skill name (without .md extension)" },
+      },
+      required: ["skill_name"],
+    },
+    handler: skillReader.plainHandler,
+  });
+  chatToolDescriptions.push(
+    "`get_skill(skill_name)` — Load full instructions for a skill by name",
+  );
+
+  // sentry_query tool (when Sentry config available)
   if (env.SENTRY_AUTH_TOKEN && env.SENTRY_ORG && env.SENTRY_PROJECT) {
     const sentryTool = createSentryQueryTool({
       authToken: env.SENTRY_AUTH_TOKEN,
       org: env.SENTRY_ORG,
       project: env.SENTRY_PROJECT,
     });
-    const mcpServer = createSdkMcpServer({
-      name: "ai-hub-tools",
-      tools: [
-        tool(
-          sentryTool.name,
-          sentryTool.description,
-          sentryTool.inputSchema,
-          sentryTool.handler,
-        ),
-      ],
+    mcpTools.push(
+      tool(sentryTool.name, sentryTool.description, sentryTool.inputSchema, sentryTool.handler),
+    );
+    genericTools.push({
+      name: sentryTool.name,
+      description: sentryTool.description,
+      parameters: {
+        type: "object",
+        properties: {
+          issue_id: { type: "string", description: "Sentry issue ID" },
+        },
+        required: ["issue_id"],
+      },
+      handler: async (args: { issue_id: string }) => {
+        const result = await sentryTool.handler(args);
+        return result.content[0].text;
+      },
     });
-    chatMcpServers = { "ai-hub-tools": mcpServer };
-    chatTools.push(
+    chatToolDescriptions.push(
       "`sentry_query(issue_id)` — Query Sentry for issue details, stacktrace, affected users",
     );
   }
 
+  const chatMcpServers = {
+    "ai-hub-tools": createSdkMcpServer({ name: "ai-hub-tools", tools: mcpTools }),
+  };
+
   // Build rich system prompt with project knowledge + skills
   const systemPrompt = buildSystemPrompt({
     workspaceDir: env.WORKSPACE_DIR,
-    skillsDir: resolve(__dirname, "skills"),
-    tools: chatTools,
+    skillsDir,
+    tools: chatToolDescriptions,
   });
 
   let chatProvider: ChatProvider;
@@ -131,6 +166,7 @@ export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHeali
       apiKey: env.CHAT_API_KEY,
       model: env.CHAT_MODEL ?? "deepseek-chat",
       systemPrompt,
+      tools: genericTools,
     });
   } else {
     chatProvider = new ClaudeProvider({

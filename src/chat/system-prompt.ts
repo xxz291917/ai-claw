@@ -32,7 +32,7 @@ You can read/write code, run commands, query Sentry, and help with any engineeri
     sections.push(`## Project Knowledge\n\n${claudeMd}`);
   }
 
-  // --- 3. Available Skills ---
+  // --- 3. Available Skills (summary only; use get_skill tool for full content) ---
   const skills = loadSkills(ctx.skillsDir);
   if (skills.length > 0) {
     const skillList = skills
@@ -40,11 +40,9 @@ You can read/write code, run commands, query Sentry, and help with any engineeri
       .join("\n");
     sections.push(`## Available Skills
 
-The following skills define specialized workflows. When a task matches a skill, follow its instructions.
+The following skills define specialized workflows. When a task matches a skill, use the \`get_skill\` tool to load its full instructions, then follow them.
 
-${skillList}
-
-To use a skill, read its full content from the skills directory when the task matches.`);
+${skillList}`);
   }
 
   // --- 4. Available Tools ---
