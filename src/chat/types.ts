@@ -13,6 +13,7 @@ export type ChatEvent =
 export type ChatRequest = {
   message: string;
   sessionId?: string;
+  history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
 };
 
 export interface ChatProvider {

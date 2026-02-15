@@ -54,7 +54,7 @@ export function createApp(): {
   // Input adapters (used by future route migration; created now for wiring)
   const _sentryAdapter = new SentryInputAdapter();
   const _larkAdapter = new LarkInputAdapter();
-  const _webChatAdapter = new WebChatInputAdapter();
+  const webChatAdapter = new WebChatInputAdapter();
 
   // Agent registry (empty for now — sub-agents added in future tasks)
   const registry = new AgentRegistry([]);
@@ -235,7 +235,7 @@ export function createApp(): {
     });
   }
 
-  chatRouter(app, chatProvider);
+  chatRouter(app, chatProvider, { sessionManager, eventBus, webChatAdapter });
 
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));

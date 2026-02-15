@@ -29,19 +29,22 @@ type ToolCall = {
 
 export class GenericProvider implements ChatProvider {
   readonly name: string;
-  private sessions = new Map<string, Message[]>();
 
   constructor(private config: GenericProviderConfig) {
     this.name = config.model;
   }
 
   async *stream(req: ChatRequest): AsyncIterable<ChatEvent> {
-    const sessionId = req.sessionId ?? crypto.randomUUID();
     const maxTurns = this.config.maxTurns ?? 10;
 
-    let messages = this.sessions.get(sessionId) ?? [];
-    if (messages.length === 0 && this.config.systemPrompt) {
+    const messages: Message[] = [];
+    if (this.config.systemPrompt) {
       messages.push({ role: "system", content: this.config.systemPrompt });
+    }
+    if (req.history) {
+      for (const h of req.history) {
+        messages.push({ role: h.role, content: h.content });
+      }
     }
     messages.push({ role: "user", content: req.message });
 
@@ -81,15 +84,13 @@ export class GenericProvider implements ChatProvider {
         });
       } catch (err: any) {
         yield { type: "error", message: `Network error: ${err.message}` };
-        yield { type: "done", sessionId, costUsd: 0 };
-        this.sessions.set(sessionId, messages);
+        yield { type: "done", sessionId: "", costUsd: 0 };
         return;
       }
 
       if (!res.ok || !res.body) {
         yield { type: "error", message: `API error: ${res.status}` };
-        yield { type: "done", sessionId, costUsd: 0 };
-        this.sessions.set(sessionId, messages);
+        yield { type: "done", sessionId: "", costUsd: 0 };
         return;
       }
 
@@ -142,9 +143,7 @@ export class GenericProvider implements ChatProvider {
       }
 
       if (toolCalls.length === 0) {
-        messages.push({ role: "assistant", content: assistantContent });
-        this.sessions.set(sessionId, messages);
-        yield { type: "done", sessionId, costUsd: 0 };
+        yield { type: "done", sessionId: "", costUsd: 0 };
         return;
       }
 
@@ -181,9 +180,8 @@ export class GenericProvider implements ChatProvider {
       }
     }
 
-    this.sessions.set(sessionId, messages);
     yield { type: "error", message: "Max turns reached" };
-    yield { type: "done", sessionId, costUsd: 0 };
+    yield { type: "done", sessionId: "", costUsd: 0 };
   }
 }
 

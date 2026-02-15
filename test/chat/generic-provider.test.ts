@@ -48,7 +48,7 @@ describe("GenericProvider", () => {
     expect(events).toEqual([
       { type: "text", content: "Hello" },
       { type: "text", content: " world" },
-      { type: "done", sessionId: expect.any(String), costUsd: 0 },
+      { type: "done", sessionId: "", costUsd: 0 },
     ]);
   });
 
@@ -95,7 +95,7 @@ describe("GenericProvider", () => {
       { type: "tool_use", tool: "get_time", input: {} },
       { type: "tool_result", tool: "get_time", output: "15:00" },
       { type: "text", content: "It is 3pm" },
-      { type: "done", sessionId: expect.any(String), costUsd: 0 },
+      { type: "done", sessionId: "", costUsd: 0 },
     ]);
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
