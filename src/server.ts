@@ -22,12 +22,69 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import type { ToolDef } from "./chat/generic-provider.js";
 import type { ChatProvider } from "./chat/types.js";
 
+// New architecture imports
+import { EventBus } from "./core/event-bus.js";
+import { Core } from "./core/core.js";
+import { RuleRouter } from "./core/rule-router.js";
+import { Executor } from "./core/executor.js";
+import { AgentRegistry } from "./agents/registry.js";
+import { SessionManager } from "./sessions/manager.js";
+import { SentryInputAdapter } from "./adapters/input/sentry.js";
+import { LarkInputAdapter } from "./adapters/input/lark.js";
+import { WebChatInputAdapter } from "./adapters/input/web-chat.js";
+import type { HubEvent } from "./core/hub-event.js";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHealingWorkflow | null } {
+export function createApp(): {
+  app: Hono;
+  store: TaskStore;
+  workflow: FaultHealingWorkflow | null;
+  eventBus: EventBus;
+  core: Core;
+} {
   const env = loadEnv();
   const db = createDb(resolve("data/ai-hub.db"));
   const store = new TaskStore(db);
+
+  // --- New Architecture: EventBus + Adapters + Core ---
+  const eventBus = new EventBus(db);
+  const sessionManager = new SessionManager(db);
+
+  // Input adapters (used by future route migration; created now for wiring)
+  const _sentryAdapter = new SentryInputAdapter();
+  const _larkAdapter = new LarkInputAdapter();
+  const _webChatAdapter = new WebChatInputAdapter();
+
+  // Agent registry (empty for now — sub-agents added in future tasks)
+  const registry = new AgentRegistry([]);
+
+  // Rule router (no routes yet — rules added in future tasks)
+  const ruleRouter = new RuleRouter([]);
+
+  // Executor
+  const executor = new Executor({
+    registry,
+    db,
+    outputSend: async (_action, _agentEvent) => {
+      // Output adapters will be wired in a future task
+    },
+  });
+
+  // Chat handler callback for Core (placeholder — actual chat still uses chatRouter)
+  const handleChat = async (event: HubEvent) => {
+    // For now, just log that we received a chat event via the new architecture
+    // The actual chat handling still goes through the existing chatRouter
+    console.log(`[core] Chat event received: ${event.type} from ${event.source}`);
+  };
+
+  // Core orchestrator
+  const core = new Core({ ruleRouter, executor, sessionManager, handleChat });
+
+  // Subscribe Core to all events
+  eventBus.on("*", (event) => core.handle(event));
+
+  console.log("[init] New architecture wired (EventBus + Adapters + Core)");
 
   // Build Hono app
   const app = new Hono();
@@ -183,7 +240,7 @@ export function createApp(): { app: Hono; store: TaskStore; workflow: FaultHeali
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
 
-  return { app, store, workflow };
+  return { app, store, workflow, eventBus, core };
 }
 
 export function startServer() {

@@ -14,7 +14,7 @@ describe("buildSystemPrompt", () => {
     });
 
     expect(prompt).toContain("AI Hub Assistant");
-    expect(prompt).toContain("AI Hub is an AI-driven fault healing");
+    expect(prompt).toContain("Fault Healing Pipeline");
     expect(prompt).toContain("fault-healing");
   });
 
