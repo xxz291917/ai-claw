@@ -15,6 +15,16 @@ const envSchema = z.object({
   GH_TOKEN: z.string().optional(),
   GITHUB_REPO: z.string().optional(),
 
+  // Web tools (optional)
+  BRAVE_API_KEY: z.string().optional(),
+  FIRECRAWL_API_KEY: z.string().optional(),
+
+  // Bash exec tool
+  BASH_EXEC_ENABLED: z.enum(["true", "false"]).default("true"),
+  BASH_EXEC_TIMEOUT: z.coerce.number().default(30),
+  BASH_EXEC_MAX_TIMEOUT: z.coerce.number().default(300),
+  BASH_EXEC_ALLOWED_COMMANDS: z.string().optional(),
+
   // Chat assistant
   CHAT_PROVIDER: z.enum(["claude", "generic"]).default("claude"),
   CHAT_MODEL: z.string().optional(),

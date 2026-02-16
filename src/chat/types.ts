@@ -19,4 +19,5 @@ export type ChatRequest = {
 export interface ChatProvider {
   readonly name: string;
   stream(req: ChatRequest): AsyncIterable<ChatEvent>;
+  summarize?(messages: Array<{ role: string; content: string }>): Promise<string>;
 }

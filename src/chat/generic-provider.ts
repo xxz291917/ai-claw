@@ -19,11 +19,12 @@ export type GenericProviderConfig = {
 type Message =
   | { role: "system"; content: string }
   | { role: "user"; content: string }
-  | { role: "assistant"; content?: string; tool_calls?: ToolCall[] }
+  | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
 type ToolCall = {
   id: string;
+  type: "function";
   function: { name: string; arguments: string };
 };
 
@@ -32,6 +33,33 @@ export class GenericProvider implements ChatProvider {
 
   constructor(private config: GenericProviderConfig) {
     this.name = config.model;
+  }
+
+  async summarize(
+    messages: Array<{ role: string; content: string }>,
+  ): Promise<string> {
+    const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.config.model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Summarize the following conversation concisely in the same language. Preserve key facts, decisions, and context.",
+          },
+          ...messages.map((m) => ({ role: m.role, content: m.content })),
+        ],
+        max_tokens: 500,
+      }),
+    });
+    if (!res.ok) throw new Error(`Summarize API error: ${res.status}`);
+    const data: any = await res.json();
+    return data.choices?.[0]?.message?.content ?? "[Summary unavailable]";
   }
 
   async *stream(req: ChatRequest): AsyncIterable<ChatEvent> {
@@ -89,7 +117,9 @@ export class GenericProvider implements ChatProvider {
       }
 
       if (!res.ok || !res.body) {
-        yield { type: "error", message: `API error: ${res.status}` };
+        const errBody = await res.text().catch(() => "");
+        console.error(`[chat] API error ${res.status}:`, errBody);
+        yield { type: "error", message: friendlyApiError(res.status, errBody) };
         yield { type: "done", sessionId: "", costUsd: 0 };
         return;
       }
@@ -122,6 +152,7 @@ export class GenericProvider implements ChatProvider {
             if (tc.id) {
               toolCalls[idx] = {
                 id: tc.id,
+                type: "function",
                 function: { name: tc.function?.name ?? "", arguments: "" },
               };
             }
@@ -149,6 +180,7 @@ export class GenericProvider implements ChatProvider {
 
       messages.push({
         role: "assistant",
+        content: assistantContent || null,
         tool_calls: toolCalls.filter(Boolean),
       });
 
@@ -180,9 +212,97 @@ export class GenericProvider implements ChatProvider {
       }
     }
 
-    yield { type: "error", message: "Max turns reached" };
+    // Tool-call budget exhausted — make one final call WITHOUT tools
+    // so the LLM summarises what it accomplished instead of a hard error.
+    yield* this.finalSummaryTurn(messages);
+  }
+
+  /**
+   * One last LLM call with no tools, forcing a text-only wrap-up.
+   */
+  private async *finalSummaryTurn(
+    messages: Message[],
+  ): AsyncGenerator<ChatEvent> {
+    messages.push({
+      role: "system",
+      content:
+        "You have used all available tool calls. " +
+        "Do NOT call any more tools. " +
+        "Summarise what you have accomplished so far and let the user know if anything remains incomplete. " +
+        "Reply in the same language the user used.",
+    });
+
+    try {
+      const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.config.model,
+          messages,
+          stream: true,
+          // Intentionally omit `tools` so the model cannot call any
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        yield { type: "done", sessionId: "", costUsd: 0 };
+        return;
+      }
+
+      for await (const line of readSSELines(res.body)) {
+        if (line === "[DONE]") break;
+        let data: any;
+        try {
+          data = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        const content = data.choices?.[0]?.delta?.content;
+        if (content) {
+          yield { type: "text", content };
+        }
+      }
+    } catch {
+      // Network failure on wrap-up — silently finish
+    }
+
     yield { type: "done", sessionId: "", costUsd: 0 };
   }
+}
+
+function friendlyApiError(status: number, body: string): string {
+  // Try to extract the API's error message
+  try {
+    const parsed = JSON.parse(body);
+    const msg = parsed?.error?.message ?? parsed?.message;
+    if (msg) {
+      // Known patterns from DeepSeek / OpenAI-compatible APIs
+      if (/content.*risk/i.test(msg)) {
+        return "内容被 API 安全过滤器拦截，请换一种方式提问。";
+      }
+      if (/rate.?limit/i.test(msg)) {
+        return "API 请求频率超限，请稍后再试。";
+      }
+      if (/quota|balance|insufficient/i.test(msg)) {
+        return "API 额度不足，请联系管理员。";
+      }
+      if (/context.?length|too.?long|token/i.test(msg)) {
+        return "对话过长，请使用 /reset 重置会话后重试。";
+      }
+      return `API 返回错误: ${msg}`;
+    }
+  } catch {
+    // body is not JSON — fall through
+  }
+
+  // Fallback by HTTP status
+  if (status === 401) return "API 认证失败，请检查 API Key 配置。";
+  if (status === 429) return "API 请求频率超限，请稍后再试。";
+  if (status >= 500) return `API 服务暂时不可用 (${status})，请稍后再试。`;
+  return `API 请求失败 (${status})`;
 }
 
 async function* readSSELines(

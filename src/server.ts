@@ -18,6 +18,9 @@ import { GenericProvider } from "./chat/generic-provider.js";
 import { buildSystemPrompt } from "./chat/system-prompt.js";
 import { createSentryQueryTool } from "./agent/tools/sentry-query.js";
 import { createSkillReaderTool } from "./agent/tools/skill-reader.js";
+import { createWebSearchTool } from "./agent/tools/web-search.js";
+import { createWebFetchTool } from "./agent/tools/web-fetch.js";
+import { createBashExecTool } from "./agent/tools/bash-exec.js";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import type { ToolDef } from "./chat/generic-provider.js";
 import type { ChatProvider } from "./chat/types.js";
@@ -203,6 +206,86 @@ export function createApp(): {
     });
     chatToolDescriptions.push(
       "`sentry_query(issue_id)` — Query Sentry for issue details, stacktrace, affected users",
+    );
+  }
+
+  // web_search tool (when BRAVE_API_KEY available)
+  if (env.BRAVE_API_KEY) {
+    const webSearchTool = createWebSearchTool({ apiKey: env.BRAVE_API_KEY });
+    mcpTools.push(
+      tool(webSearchTool.name, webSearchTool.description, webSearchTool.inputSchema, webSearchTool.handler),
+    );
+    genericTools.push({
+      name: webSearchTool.name,
+      description: webSearchTool.description,
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query string" },
+          count: { type: "number", description: "Number of results (1-10, default 5)" },
+        },
+        required: ["query"],
+      },
+      handler: webSearchTool.plainHandler,
+    });
+    chatToolDescriptions.push(
+      "`web_search(query, count?)` — Search the web for current information",
+    );
+  }
+
+  // web_fetch tool (always available; Firecrawl optional enhancement)
+  const webFetchTool = createWebFetchTool({
+    firecrawlApiKey: env.FIRECRAWL_API_KEY,
+  });
+  mcpTools.push(
+    tool(webFetchTool.name, webFetchTool.description, webFetchTool.inputSchema, webFetchTool.handler),
+  );
+  genericTools.push({
+    name: webFetchTool.name,
+    description: webFetchTool.description,
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "HTTP or HTTPS URL to fetch" },
+        maxChars: { type: "number", description: "Maximum characters (default 50000)" },
+      },
+      required: ["url"],
+    },
+    handler: webFetchTool.plainHandler,
+  });
+  chatToolDescriptions.push(
+    "`web_fetch(url, maxChars?)` — Fetch and extract readable content from a URL",
+  );
+
+  // bash_exec tool (when enabled, default true)
+  if (env.BASH_EXEC_ENABLED === "true") {
+    const bashExecTool = createBashExecTool({
+      defaultCwd: env.WORKSPACE_DIR,
+      defaultTimeoutMs: env.BASH_EXEC_TIMEOUT * 1000,
+      maxTimeoutMs: env.BASH_EXEC_MAX_TIMEOUT * 1000,
+      allowedCommands: env.BASH_EXEC_ALLOWED_COMMANDS
+        ?.split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    });
+    mcpTools.push(
+      tool(bashExecTool.name, bashExecTool.description, bashExecTool.inputSchema, bashExecTool.handler),
+    );
+    genericTools.push({
+      name: bashExecTool.name,
+      description: bashExecTool.description,
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Shell command to execute" },
+          timeout: { type: "number", description: "Timeout in seconds (default 30, max 300)" },
+        },
+        required: ["command"],
+      },
+      handler: bashExecTool.plainHandler,
+    });
+    chatToolDescriptions.push(
+      "`bash_exec(command, timeout?)` — Execute a shell command in the workspace directory",
     );
   }
 

@@ -24,7 +24,7 @@ describe("buildSystemPrompt", () => {
       skillsDir: resolve(projectRoot, "src/skills"),
     });
 
-    expect(prompt).toContain("Available Skills");
+    expect(prompt).toContain("Skills (mandatory)");
     expect(prompt).toContain("fault-healing");
     expect(prompt).toContain("get_skill");
   });

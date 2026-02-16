@@ -86,6 +86,19 @@ export class SessionManager {
     return this.getMessageById(id)!;
   }
 
+  clearMessages(sessionId: string): void {
+    this.db
+      .prepare("DELETE FROM messages WHERE session_id = ?")
+      .run(sessionId);
+  }
+
+  countMessages(sessionId: string): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) as count FROM messages WHERE session_id = ?")
+      .get(sessionId) as any;
+    return row?.count ?? 0;
+  }
+
   getMessages(sessionId: string): Message[] {
     const rows = this.db
       .prepare(

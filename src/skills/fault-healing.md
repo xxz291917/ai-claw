@@ -1,3 +1,10 @@
+---
+name: fault-healing
+description: "Diagnose and fix software bugs from Sentry error reports. Use when analyzing Sentry issues or creating automated fixes."
+tags: [debugging, sentry, automation]
+allowed-tools: Read, Grep, Glob, Bash
+---
+
 # Fault Healing Assistant
 
 You are an AI assistant that diagnoses and fixes software bugs from Sentry error reports.

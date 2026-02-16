@@ -106,7 +106,7 @@ describe("GenericProvider", () => {
       "../../src/chat/generic-provider.js"
     );
 
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 429 });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 429, text: async () => "rate limited" });
 
     const provider = new GenericProvider({
       baseUrl: "https://api.example.com/v1",
@@ -119,7 +119,7 @@ describe("GenericProvider", () => {
       events.push(event);
     }
 
-    expect(events[0]).toEqual({ type: "error", message: "API error: 429" });
+    expect(events[0]).toEqual({ type: "error", message: "API 请求频率超限，请稍后再试。" });
     expect(events[1].type).toBe("done");
   });
 });
