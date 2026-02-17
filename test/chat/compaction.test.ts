@@ -77,4 +77,40 @@ describe("compactHistory", () => {
 
     expect(result).toHaveLength(41); // 1 note + 40 recent
   });
+
+  describe("Memory Flush", () => {
+    it("calls memoryFlush with early messages before compaction", async () => {
+      const history = makeMessages(50);
+      const memoryFlush = vi.fn().mockResolvedValue(undefined);
+
+      await compactHistory(history, { maxMessages: 20, memoryFlush });
+
+      expect(memoryFlush).toHaveBeenCalledTimes(1);
+      // Should receive the 30 early messages that will be compacted
+      expect(memoryFlush.mock.calls[0][0]).toHaveLength(30);
+    });
+
+    it("still compacts normally if memoryFlush fails", async () => {
+      const history = makeMessages(50);
+      const memoryFlush = vi.fn().mockRejectedValue(new Error("flush failed"));
+
+      const result = await compactHistory(history, {
+        maxMessages: 20,
+        memoryFlush,
+      });
+
+      // Should still produce compacted result
+      expect(result).toHaveLength(21);
+      expect(result[0].role).toBe("system");
+    });
+
+    it("does not call memoryFlush when history is under max", async () => {
+      const history = makeMessages(10);
+      const memoryFlush = vi.fn();
+
+      await compactHistory(history, { maxMessages: 40, memoryFlush });
+
+      expect(memoryFlush).not.toHaveBeenCalled();
+    });
+  });
 });

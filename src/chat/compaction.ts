@@ -7,9 +7,14 @@ export type SummarizeFn = (
   messages: HistoryMessage[],
 ) => Promise<string>;
 
+export type MemoryFlushFn = (
+  messages: HistoryMessage[],
+) => Promise<void>;
+
 export type CompactOptions = {
   maxMessages?: number;
   summarize?: SummarizeFn;
+  memoryFlush?: MemoryFlushFn;
 };
 
 const DEFAULT_MAX_MESSAGES = 40;
@@ -25,6 +30,15 @@ export async function compactHistory(
   const cutoff = history.length - max;
   const early = history.slice(0, cutoff);
   const recent = history.slice(cutoff);
+
+  // Memory Flush: extract memories before discarding early messages
+  if (opts.memoryFlush) {
+    try {
+      await opts.memoryFlush(early);
+    } catch {
+      // Best-effort — do not block compaction
+    }
+  }
 
   if (opts.summarize) {
     try {
