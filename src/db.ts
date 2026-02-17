@@ -75,6 +75,40 @@ export function initDb(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session
       ON messages(session_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS memory (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      source_session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_user ON memory(user_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_upsert
+      ON memory(user_id, category, key);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+      key, value,
+      content=memory, content_rowid=rowid
+    );
+
+    CREATE TRIGGER IF NOT EXISTS memory_ai AFTER INSERT ON memory BEGIN
+      INSERT INTO memory_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS memory_ad AFTER DELETE ON memory BEGIN
+      INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES ('delete', old.rowid, old.key, old.value);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS memory_au AFTER UPDATE ON memory BEGIN
+      INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES ('delete', old.rowid, old.key, old.value);
+      INSERT INTO memory_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+    END;
   `);
 }
 
