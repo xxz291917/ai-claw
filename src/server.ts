@@ -14,6 +14,7 @@ import { FaultHealingAgent } from "./agents/fault-healing.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { faultHealingRoutes } from "./routes/fault-healing.js";
 import { chatRouter } from "./chat/router.js";
+import { parseChatUsers, chatAuthMiddleware } from "./chat/auth.js";
 import { ClaudeProvider } from "./chat/claude-provider.js";
 import { GenericProvider } from "./chat/generic-provider.js";
 import { buildSystemPrompt } from "./chat/system-prompt.js";
@@ -95,6 +96,13 @@ export function createApp(): {
 
   // Build Hono app
   const app = new Hono();
+
+  // --- Chat Auth ---
+  const chatUsers = parseChatUsers(env.CHAT_USERS);
+  app.use("/api/chat", chatAuthMiddleware(chatUsers));
+  if (chatUsers.size > 0) {
+    console.log(`[init] Chat auth enabled (${chatUsers.size} users)`);
+  }
 
   // Health check
   app.get("/health", (c) => c.json({ status: "ok", timestamp: Date.now() }));
