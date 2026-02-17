@@ -41,6 +41,37 @@ export class MemoryManager {
       .all(userId) as any[];
     return rows.map(mapRow);
   }
+
+  search(userId: string, query: string, limit = 5): MemoryItem[] {
+    // Convert query terms to prefix matches for CJK compatibility.
+    // FTS5 unicode61 tokenizer groups consecutive CJK characters into a
+    // single token, so "部署" won't match the token "部署方案" without a
+    // prefix wildcard.  We split on whitespace, append '*' to each term,
+    // and join with OR so any matching term surfaces results.
+    const ftsQuery = query
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((t) => `"${t}"*`)
+      .join(" OR ");
+
+    if (!ftsQuery) return [];
+
+    const rows = this.db
+      .prepare(
+        `SELECT m.* FROM memory m
+         JOIN memory_fts fts ON m.rowid = fts.rowid
+         WHERE fts.memory_fts MATCH ? AND m.user_id = ?
+         ORDER BY fts.rank
+         LIMIT ?`,
+      )
+      .all(ftsQuery, userId, limit) as any[];
+    return rows.map(mapRow);
+  }
+
+  remove(id: string): void {
+    this.db.prepare("DELETE FROM memory WHERE id = ?").run(id);
+  }
 }
 
 function mapRow(row: any): MemoryItem {

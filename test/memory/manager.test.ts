@@ -60,4 +60,85 @@ describe("MemoryManager", () => {
       expect(mgr.getByUser("alice")[0].value).toBe("backend");
     });
   });
+
+  describe("search", () => {
+    it("finds memories matching query via FTS5", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+
+      mgr.save("alice", [
+        { category: "decision", key: "部署方案", value: "使用 Docker Compose 部署到生产环境" },
+        { category: "preference", key: "编辑器", value: "VS Code 搭配 Vim 插件" },
+        { category: "fact", key: "项目语言", value: "TypeScript 和 Python" },
+      ]);
+
+      const results = mgr.search("alice", "Docker 部署");
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results[0].key).toBe("部署方案");
+    });
+
+    it("returns empty array when no match", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+
+      mgr.save("alice", [
+        { category: "fact", key: "team", value: "backend" },
+      ]);
+
+      const results = mgr.search("alice", "xyznonexistent");
+      expect(results).toHaveLength(0);
+    });
+
+    it("respects limit parameter", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+
+      mgr.save("alice", [
+        { category: "fact", key: "fact 1", value: "TypeScript project" },
+        { category: "fact", key: "fact 2", value: "TypeScript codebase" },
+        { category: "fact", key: "fact 3", value: "TypeScript monorepo" },
+      ]);
+
+      const results = mgr.search("alice", "TypeScript", 2);
+      expect(results).toHaveLength(2);
+    });
+
+    it("does not return other users' memories", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+
+      mgr.save("alice", [{ category: "fact", key: "secret", value: "alice data" }]);
+      mgr.save("bob", [{ category: "fact", key: "secret", value: "bob data" }]);
+
+      const results = mgr.search("alice", "data");
+      expect(results).toHaveLength(1);
+      expect(results[0].value).toBe("alice data");
+    });
+  });
+
+  describe("remove", () => {
+    it("deletes a memory by id", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+
+      mgr.save("alice", [{ category: "fact", key: "temp", value: "to delete" }]);
+      const items = mgr.getByUser("alice");
+      expect(items).toHaveLength(1);
+
+      mgr.remove(items[0].id);
+      expect(mgr.getByUser("alice")).toHaveLength(0);
+    });
+
+    it("also removes from FTS index", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+
+      mgr.save("alice", [{ category: "fact", key: "temp", value: "searchable content" }]);
+      const items = mgr.getByUser("alice");
+      mgr.remove(items[0].id);
+
+      const results = mgr.search("alice", "searchable");
+      expect(results).toHaveLength(0);
+    });
+  });
 });
