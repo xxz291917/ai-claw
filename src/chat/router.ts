@@ -56,10 +56,11 @@ export function chatRouter(
     }
 
     // 1. Resolve or create session
+    const userId = c.get("userId") ?? "web-anonymous";
     let session = sessionId ? sessionManager.getById(sessionId) : null;
     if (!session) {
       session = sessionManager.create({
-        userId: "web-anonymous",
+        userId,
         channel: "web",
         channelId: "",
         provider: provider.name,

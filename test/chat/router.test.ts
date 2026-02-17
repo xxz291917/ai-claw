@@ -7,6 +7,7 @@ import { EventBus } from "../../src/core/event-bus.js";
 import { WebChatInputAdapter } from "../../src/adapters/input/web-chat.js";
 import { MemoryManager } from "../../src/memory/manager.js";
 import { createTestDb } from "../helpers.js";
+import "../../src/chat/auth.js";
 
 function mockProvider(events: ChatEvent[]): ChatProvider {
   return {
@@ -209,5 +210,40 @@ describe("chatRouter", () => {
       (m) => m.role === "system" && m.content.includes("语言"),
     );
     expect(memoryMsg).toBeTruthy();
+  });
+
+  it("uses userId from Hono context for session creation", async () => {
+    const db = createTestDb();
+    const sessionManager = new SessionManager(db);
+    const eventBus = new EventBus(db);
+    const webChatAdapter = new WebChatInputAdapter();
+
+    const provider = mockProvider([
+      { type: "text", content: "hi" },
+      { type: "done", sessionId: "", costUsd: 0 },
+    ]);
+
+    const app = new Hono();
+
+    // Simulate auth middleware setting userId
+    app.use("/api/chat", async (c, next) => {
+      c.set("userId", "alice");
+      return next();
+    });
+
+    chatRouter(app, provider, { sessionManager, eventBus, webChatAdapter });
+
+    const res = await app.request("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "hello" }),
+    });
+
+    const text = await res.text();
+    const doneMatch = text.match(/"sessionId":"([^"]+)"/);
+    const sid = doneMatch![1];
+
+    const session = sessionManager.getById(sid);
+    expect(session!.userId).toBe("alice");
   });
 });
