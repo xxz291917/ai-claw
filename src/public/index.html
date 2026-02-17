@@ -366,7 +366,18 @@
 </style>
 </head>
 <body>
-  <header>AI Hub Chat</header>
+  <header>
+    <span>AI Hub Chat</span>
+    <span id="auth-status" style="float:right;font-size:12px;font-weight:400;opacity:0.7"></span>
+  </header>
+  <div id="auth-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:24px;max-width:360px;width:90%;text-align:center;">
+      <h3 style="margin-bottom:12px;">Enter Access Token</h3>
+      <input id="token-input" type="password" placeholder="Paste your token..." style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;margin-bottom:12px;">
+      <button id="token-submit" style="background:#1a1a2e;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;cursor:pointer;width:100%;">Connect</button>
+      <p id="token-error" style="color:#e53e3e;font-size:12px;margin-top:8px;display:none;"></p>
+    </div>
+  </div>
   <div id="messages"></div>
   <div id="input-area">
     <textarea id="input" rows="1" placeholder="Ask anything..."></textarea>
@@ -376,6 +387,46 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/highlight.min.js"></script>
 <script>
+// --- Auth ---
+let authToken = localStorage.getItem("chat_token") || "";
+
+async function checkAuth() {
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (authToken) headers["Authorization"] = "Bearer " + authToken;
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message: "/status" }),
+    });
+
+    if (res.status === 401) {
+      showAuthOverlay();
+      return false;
+    }
+
+    // Consume stream to avoid dangling connection
+    try { await res.text(); } catch {}
+
+    if (authToken) {
+      document.getElementById("auth-status").textContent = "Authenticated";
+    }
+    return true;
+  } catch {
+    return true; // Network error — don't block, let normal flow handle it
+  }
+}
+
+function showAuthOverlay() {
+  const overlay = document.getElementById("auth-overlay");
+  overlay.style.display = "flex";
+}
+
+function hideAuthOverlay() {
+  document.getElementById("auth-overlay").style.display = "none";
+}
+
 // --- Config ---
 const TOOL_INLINE_THRESHOLD = 80;
 
@@ -412,7 +463,7 @@ function extractThinking(text) {
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
-let sessionId = null;
+let sessionId = localStorage.getItem("chat_sessionId") || null;
 let sending = false;
 
 // --- Auto-resize textarea ---
@@ -566,11 +617,24 @@ async function send() {
   }
 
   try {
+    const headers = { "Content-Type": "application/json" };
+    if (authToken) headers["Authorization"] = "Bearer " + authToken;
+
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ message: text, sessionId }),
     });
+
+    if (res.status === 401) {
+      removeReadingIndicator();
+      localStorage.removeItem("chat_token");
+      authToken = "";
+      showAuthOverlay();
+      sending = false;
+      sendBtn.disabled = false;
+      return;
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -634,6 +698,7 @@ async function send() {
 
         } else if (event.type === "done") {
           sessionId = event.sessionId || sessionId;
+          if (sessionId) localStorage.setItem("chat_sessionId", sessionId);
           bubbleEl.classList.remove("streaming");
 
           if (event.costUsd > 0) {
@@ -716,6 +781,52 @@ function createAssistantMsg() {
 
   return { msgEl, toolCardsEl, thinkingEl, bubbleEl, mdEl };
 }
+
+// --- Auth event listeners ---
+document.getElementById("token-submit").addEventListener("click", async () => {
+  const input = document.getElementById("token-input");
+  const errorEl = document.getElementById("token-error");
+  const token = input.value.trim();
+  if (!token) return;
+
+  errorEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token,
+      },
+      body: JSON.stringify({ message: "/status" }),
+    });
+
+    if (res.status === 401) {
+      errorEl.style.display = "block";
+      errorEl.textContent = "Invalid token";
+      return;
+    }
+
+    // Consume stream
+    try { await res.text(); } catch {}
+
+    // Save and proceed
+    authToken = token;
+    localStorage.setItem("chat_token", token);
+    document.getElementById("auth-status").textContent = "Authenticated";
+    hideAuthOverlay();
+  } catch {
+    errorEl.style.display = "block";
+    errorEl.textContent = "Connection error";
+  }
+});
+
+document.getElementById("token-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("token-submit").click();
+});
+
+// Check auth on page load
+checkAuth();
 </script>
 </body>
 </html>
