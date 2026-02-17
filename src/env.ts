@@ -21,8 +21,8 @@ const envSchema = z.object({
 
   // Bash exec tool
   BASH_EXEC_ENABLED: z.enum(["true", "false"]).default("true"),
-  BASH_EXEC_TIMEOUT: z.coerce.number().default(30),
-  BASH_EXEC_MAX_TIMEOUT: z.coerce.number().default(300),
+  BASH_EXEC_TIMEOUT: z.coerce.number().default(120),
+  BASH_EXEC_MAX_TIMEOUT: z.coerce.number().default(600),
   BASH_EXEC_ALLOWED_COMMANDS: z.string().optional(),
 
   // Chat assistant
@@ -30,6 +30,11 @@ const envSchema = z.object({
   CHAT_MODEL: z.string().optional(),
   CHAT_API_BASE: z.string().optional(),
   CHAT_API_KEY: z.string().optional(),
+  // Memory / Embedding (reserved for future use)
+  EMBEDDING_PROVIDER: z.enum(["none", "openai", "local"]).default("none"),
+  EMBEDDING_API_KEY: z.string().optional(),
+  EMBEDDING_MODEL: z.string().optional(),
+
   CHAT_SYSTEM_PROMPT: z
     .string()
     .default(
