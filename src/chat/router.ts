@@ -4,14 +4,18 @@ import type { ChatProvider } from "./types.js";
 import type { SessionManager } from "../sessions/manager.js";
 import type { EventBus } from "../core/event-bus.js";
 import type { WebChatInputAdapter } from "../adapters/input/web-chat.js";
+import type { MemoryManager } from "../memory/manager.js";
+import type { MemoryFlushFn } from "./compaction.js";
 import { handleCommand } from "./commands.js";
 import { compactHistory } from "./compaction.js";
+import { extractMemories } from "../memory/extractor.js";
 
 type ChatRouterDeps = {
   sessionManager: SessionManager;
   eventBus: EventBus;
   webChatAdapter: WebChatInputAdapter;
   maxHistoryMessages?: number;
+  memoryManager?: MemoryManager;
 };
 
 // Per-session concurrency lock — same session requests queue, cross-session parallel
@@ -39,7 +43,7 @@ export function chatRouter(
   provider: ChatProvider,
   deps: ChatRouterDeps,
 ): void {
-  const { sessionManager, eventBus, webChatAdapter } = deps;
+  const { sessionManager, eventBus, webChatAdapter, memoryManager } = deps;
   const maxHistoryMessages = deps.maxHistoryMessages ?? 40;
 
   app.post("/api/chat", async (c) => {
@@ -93,9 +97,43 @@ export function chatRouter(
         content: m.content,
       }));
 
+      // 5a. Inject relevant memories
+      if (memoryManager) {
+        try {
+          const memories = memoryManager.search(session.userId, message);
+          if (memories.length > 0) {
+            const memoryText = memories
+              .map((m) => `- [${m.category}] ${m.key}: ${m.value}`)
+              .join("\n");
+            rawHistory.unshift({
+              role: "system",
+              content: `你了解该用户的以下信息:\n${memoryText}`,
+            });
+          }
+        } catch {
+          // Best-effort — skip memory injection on error
+        }
+      }
+
+      // 5b. Build memoryFlush callback
+      const memoryFlush: MemoryFlushFn | undefined =
+        memoryManager && provider.summarize
+          ? async (early) => {
+              const items = await extractMemories(early, (prompt) =>
+                provider.summarize!(
+                  [{ role: "user", content: prompt }],
+                ),
+              );
+              if (items.length > 0) {
+                memoryManager.save(session.userId, items, session.id);
+              }
+            }
+          : undefined;
+
       const history = await compactHistory(rawHistory, {
         maxMessages: maxHistoryMessages,
         summarize: provider.summarize?.bind(provider),
+        memoryFlush,
       });
 
       return streamSSE(c, async (stream) => {

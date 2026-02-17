@@ -5,6 +5,7 @@ import { chatRouter } from "../../src/chat/router.js";
 import { SessionManager } from "../../src/sessions/manager.js";
 import { EventBus } from "../../src/core/event-bus.js";
 import { WebChatInputAdapter } from "../../src/adapters/input/web-chat.js";
+import { MemoryManager } from "../../src/memory/manager.js";
 import { createTestDb } from "../helpers.js";
 
 function mockProvider(events: ChatEvent[]): ChatProvider {
@@ -164,5 +165,49 @@ describe("chatRouter", () => {
     // Our session should have the provider's session ID stored
     const session = sessionManager.getById(sessionId);
     expect(session!.providerSessionId).toBe("claude-sdk-session-123");
+  });
+
+  it("injects relevant memories into history", async () => {
+    const db = createTestDb();
+    const sessionManager = new SessionManager(db);
+    const eventBus = new EventBus(db);
+    const webChatAdapter = new WebChatInputAdapter();
+    const memoryManager = new MemoryManager(db);
+
+    // Pre-populate memory for the anonymous user
+    memoryManager.save("web-anonymous", [
+      { category: "preference", key: "语言", value: "中文" },
+    ]);
+
+    let receivedHistory: Array<{ role: string; content: string }> = [];
+    const provider: ChatProvider = {
+      name: "test",
+      async *stream(req) {
+        receivedHistory = req.history ?? [];
+        yield { type: "text", content: "ok" };
+        yield { type: "done", sessionId: "", costUsd: 0 };
+      },
+    };
+
+    const app = new Hono();
+    chatRouter(app, provider, {
+      sessionManager,
+      eventBus,
+      webChatAdapter,
+      memoryManager,
+    });
+
+    const res = await app.request("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "我的 语言 偏好是什么" }),
+    });
+    await res.text();
+
+    // First message in history should be memory context
+    const memoryMsg = receivedHistory.find(
+      (m) => m.role === "system" && m.content.includes("语言"),
+    );
+    expect(memoryMsg).toBeTruthy();
   });
 });
