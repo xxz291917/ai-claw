@@ -7,11 +7,12 @@ import { fileURLToPath } from "node:url";
 import { createDb } from "./db.js";
 import { loadEnv } from "./env.js";
 import { TaskStore } from "./tasks/store.js";
-import { sentryWebhook } from "./webhooks/sentry.js";
 import { runAgent } from "./agent/runner.js";
 import { getLarkClient, sendLarkCard } from "./lark/notify.js";
-import { larkCallback } from "./lark/callback.js";
 import { FaultHealingWorkflow } from "./workflows/fault-healing.js";
+import { FaultHealingAgent } from "./agents/fault-healing.js";
+import { registerWebhookRoutes } from "./routes/webhooks.js";
+import { faultHealingRoutes } from "./routes/fault-healing.js";
 import { chatRouter } from "./chat/router.js";
 import { ClaudeProvider } from "./chat/claude-provider.js";
 import { GenericProvider } from "./chat/generic-provider.js";
@@ -21,6 +22,7 @@ import { createSkillReaderTool } from "./agent/tools/skill-reader.js";
 import { createWebSearchTool } from "./agent/tools/web-search.js";
 import { createWebFetchTool } from "./agent/tools/web-fetch.js";
 import { createBashExecTool } from "./agent/tools/bash-exec.js";
+import { createClaudeCodeTool } from "./agent/tools/claude-code.js";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import type { ToolDef } from "./chat/generic-provider.js";
 import type { ChatProvider } from "./chat/types.js";
@@ -32,6 +34,7 @@ import { RuleRouter } from "./core/rule-router.js";
 import { Executor } from "./core/executor.js";
 import { AgentRegistry } from "./agents/registry.js";
 import { SessionManager } from "./sessions/manager.js";
+import { MemoryManager } from "./memory/manager.js";
 import { SentryInputAdapter } from "./adapters/input/sentry.js";
 import { LarkInputAdapter } from "./adapters/input/lark.js";
 import { WebChatInputAdapter } from "./adapters/input/web-chat.js";
@@ -53,17 +56,18 @@ export function createApp(): {
   // --- New Architecture: EventBus + Adapters + Core ---
   const eventBus = new EventBus(db);
   const sessionManager = new SessionManager(db);
+  const memoryManager = new MemoryManager(db);
 
-  // Input adapters (used by future route migration; created now for wiring)
-  const _sentryAdapter = new SentryInputAdapter();
-  const _larkAdapter = new LarkInputAdapter();
+  // Input adapters
+  const sentryAdapter = new SentryInputAdapter();
+  const larkAdapter = new LarkInputAdapter();
   const webChatAdapter = new WebChatInputAdapter();
 
-  // Agent registry (empty for now — sub-agents added in future tasks)
+  // Agent registry (agents registered conditionally below)
   const registry = new AgentRegistry([]);
 
-  // Rule router (no routes yet — rules added in future tasks)
-  const ruleRouter = new RuleRouter([]);
+  // Rule router with fault-healing routes
+  const ruleRouter = new RuleRouter(faultHealingRoutes);
 
   // Executor
   const executor = new Executor({
@@ -102,7 +106,7 @@ export function createApp(): {
     return c.json(task);
   });
 
-  // --- Fault Healing Pipeline (requires Sentry + Lark + GitHub config) ---
+  // --- Fault Healing Pipeline (EventBus-integrated) ---
   let workflow: FaultHealingWorkflow | null = null;
 
   if (env.SENTRY_AUTH_TOKEN && env.SENTRY_ORG && env.SENTRY_PROJECT &&
@@ -134,19 +138,18 @@ export function createApp(): {
         sendLarkCard(larkClient, env.LARK_NOTIFY_CHAT_ID!, card),
     });
 
-    sentryWebhook(app, store, (taskId) => {
-      workflow!.runAnalysis(taskId).catch((err) => {
-        console.error(`[workflow] Analysis failed for task ${taskId}:`, err);
-      });
+    // Register SubAgent in the EventBus architecture
+    registry.register(new FaultHealingAgent({ workflow, store }));
+
+    // Register webhook routes (EventBus-integrated)
+    registerWebhookRoutes(app, {
+      store,
+      eventBus,
+      sentryAdapter,
+      larkAdapter,
     });
 
-    larkCallback(app, store, (taskId, action) => {
-      workflow!.handleAction(taskId, action).catch((err) => {
-        console.error(`[workflow] Action "${action}" failed for task ${taskId}:`, err);
-      });
-    });
-
-    console.log("[init] Fault healing pipeline enabled");
+    console.log("[init] Fault healing pipeline enabled (EventBus)");
   } else {
     console.log("[init] Fault healing pipeline disabled (missing Sentry/Lark/GitHub config)");
   }
@@ -289,6 +292,30 @@ export function createApp(): {
     );
   }
 
+  // claude_code tool (always available — uses claude CLI's own auth, no API key needed)
+  const claudeCodeTool = createClaudeCodeTool({
+    workspaceDir: env.WORKSPACE_DIR,
+  });
+  mcpTools.push(
+    tool(claudeCodeTool.name, claudeCodeTool.description, claudeCodeTool.inputSchema, claudeCodeTool.handler),
+  );
+  genericTools.push({
+    name: claudeCodeTool.name,
+    description: claudeCodeTool.description,
+    parameters: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "Clear, specific description of the code task" },
+        timeout: { type: "number", description: "Timeout in seconds (default 300, max 600)" },
+      },
+      required: ["task"],
+    },
+    handler: claudeCodeTool.plainHandler,
+  });
+  chatToolDescriptions.push(
+    "`claude_code(task, timeout?)` — Delegate a code task to Claude Code sub-agent (read/write/edit files, search, run tests)",
+  );
+
   const chatMcpServers = {
     "ai-hub-tools": createSdkMcpServer({ name: "ai-hub-tools", tools: mcpTools }),
   };
@@ -318,7 +345,7 @@ export function createApp(): {
     });
   }
 
-  chatRouter(app, chatProvider, { sessionManager, eventBus, webChatAdapter });
+  chatRouter(app, chatProvider, { sessionManager, eventBus, webChatAdapter, memoryManager });
 
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
