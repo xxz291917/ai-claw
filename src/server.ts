@@ -343,6 +343,8 @@ export function createApp(): {
       model: env.CHAT_MODEL ?? "deepseek-chat",
       systemPrompt,
       tools: genericTools,
+      maxToolResultChars: env.CHAT_MAX_TOOL_RESULT_CHARS,
+      maxContextTokens: env.CHAT_MAX_CONTEXT_TOKENS,
     });
   } else {
     chatProvider = new ClaudeProvider({

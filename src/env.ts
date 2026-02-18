@@ -31,6 +31,8 @@ const envSchema = z.object({
   CHAT_API_BASE: z.string().optional(),
   CHAT_API_KEY: z.string().optional(),
   CHAT_USERS: z.string().optional(),
+  CHAT_MAX_TOOL_RESULT_CHARS: z.coerce.number().default(4000),
+  CHAT_MAX_CONTEXT_TOKENS: z.coerce.number().default(60000),
   // Memory / Embedding (reserved for future use)
   EMBEDDING_PROVIDER: z.enum(["none", "openai", "local"]).default("none"),
   EMBEDDING_API_KEY: z.string().optional(),

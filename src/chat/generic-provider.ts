@@ -14,6 +14,10 @@ export type GenericProviderConfig = {
   systemPrompt?: string;
   tools?: ToolDef[];
   maxTurns?: number;
+  /** Max characters per tool result (default 4000). Longer results are truncated. */
+  maxToolResultChars?: number;
+  /** Approximate max context tokens before triggering early compaction (default 60000). */
+  maxContextTokens?: number;
 };
 
 type Message =
@@ -30,9 +34,13 @@ type ToolCall = {
 
 export class GenericProvider implements ChatProvider {
   readonly name: string;
+  private maxToolResultChars: number;
+  private maxContextTokens: number;
 
   constructor(private config: GenericProviderConfig) {
     this.name = config.model;
+    this.maxToolResultChars = config.maxToolResultChars ?? 4000;
+    this.maxContextTokens = config.maxContextTokens ?? 60_000;
   }
 
   async summarize(
@@ -207,8 +215,22 @@ export class GenericProvider implements ChatProvider {
           result = `Unknown tool: ${tc.function.name}`;
         }
 
+        // Truncate large tool results
+        result = truncateToolResult(result, this.maxToolResultChars);
+
         yield { type: "tool_result", tool: tc.function.name, output: result };
         messages.push({ role: "tool", tool_call_id: tc.id, content: result });
+      }
+
+      // Token budget check — if approaching limit, compact tool results and finish
+      const usedTokens = estimateTokens(messages);
+      if (usedTokens > this.maxContextTokens * 0.8) {
+        console.log(
+          `[chat] Token budget ~${usedTokens}/${this.maxContextTokens} (${Math.round((usedTokens / this.maxContextTokens) * 100)}%) — compacting and finishing`,
+        );
+        compactToolMessages(messages, this.maxToolResultChars);
+        yield* this.finalSummaryTurn(messages);
+        return;
       }
     }
 
@@ -270,6 +292,82 @@ export class GenericProvider implements ChatProvider {
     }
 
     yield { type: "done", sessionId: "", costUsd: 0 };
+  }
+}
+
+/**
+ * Truncate a tool result to maxChars, appending a notice if truncated.
+ */
+function truncateToolResult(result: string, maxChars: number): string {
+  if (result.length <= maxChars) return result;
+  return (
+    result.slice(0, maxChars) +
+    `\n\n[...truncated, ${result.length} chars total]`
+  );
+}
+
+/**
+ * Estimate token count for a messages array.
+ * Rough heuristic: CJK chars ≈ 1 token each, other chars ≈ 1 token per 4 chars.
+ * Good enough for budget tracking — not meant for billing precision.
+ */
+export function estimateTokens(messages: Message[]): number {
+  let total = 0;
+  for (const m of messages) {
+    const text =
+      m.role === "assistant"
+        ? (m as any).content ?? ""
+        : (m as any).content ?? "";
+    total += estimateStringTokens(text);
+    // Account for tool_calls arguments in assistant messages
+    if (m.role === "assistant" && (m as any).tool_calls) {
+      for (const tc of (m as any).tool_calls) {
+        total += estimateStringTokens(tc.function?.arguments ?? "");
+        total += estimateStringTokens(tc.function?.name ?? "");
+      }
+    }
+  }
+  return total;
+}
+
+function estimateStringTokens(s: string): number {
+  let tokens = 0;
+  for (const ch of s) {
+    // CJK Unified Ideographs + common CJK ranges
+    const code = ch.codePointAt(0)!;
+    if (
+      (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified
+      (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
+      (code >= 0x3000 && code <= 0x303f) || // CJK Punctuation
+      (code >= 0xff00 && code <= 0xffef)    // Fullwidth Forms
+    ) {
+      tokens += 1;
+    } else {
+      tokens += 0.25; // ~4 ASCII chars per token
+    }
+  }
+  return Math.ceil(tokens);
+}
+
+/**
+ * Compact older tool messages to free up context space.
+ * Keeps the last 2 tool results intact, aggressively truncates earlier ones.
+ */
+function compactToolMessages(messages: Message[], keepChars: number): void {
+  const compactLimit = Math.min(keepChars, 500);
+  const toolIndices: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === "tool") toolIndices.push(i);
+  }
+  // Keep last 2 tool results full, compact the rest
+  const toCompact = toolIndices.slice(0, -2);
+  for (const idx of toCompact) {
+    const msg = messages[idx] as { role: "tool"; tool_call_id: string; content: string };
+    if (msg.content.length > compactLimit) {
+      msg.content =
+        msg.content.slice(0, compactLimit) +
+        `\n[...compacted, ${msg.content.length} chars original]`;
+    }
   }
 }
 
