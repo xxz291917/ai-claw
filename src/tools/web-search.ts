@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { UnifiedToolDef } from "./types.js";
 
 const BRAVE_SEARCH_ENDPOINT =
   "https://api.search.brave.com/res/v1/web/search";
@@ -16,7 +17,7 @@ type WebSearchConfig = {
  * Creates a web_search tool that queries Brave Search API.
  * Results are cached for 15 minutes.
  */
-export function createWebSearchTool(config: WebSearchConfig) {
+export function createWebSearchTool(config: WebSearchConfig): UnifiedToolDef {
   return {
     name: "web_search",
     description:
@@ -32,14 +33,15 @@ export function createWebSearchTool(config: WebSearchConfig) {
         .optional()
         .describe("Number of results (1-10, default 5)"),
     },
-    handler: async (args: { query: string; count?: number }) => {
-      const text = await search(config.apiKey, args.query, args.count);
-      return { content: [{ type: "text" as const, text }] };
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query string" },
+        count: { type: "number", description: "Number of results (1-10, default 5)" },
+      },
+      required: ["query"],
     },
-    plainHandler: async (args: {
-      query: string;
-      count?: number;
-    }): Promise<string> => {
+    execute: async (args: { query: string; count?: number }) => {
       return search(config.apiKey, args.query, args.count);
     },
   };

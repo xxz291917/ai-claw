@@ -18,6 +18,8 @@ export type GenericProviderConfig = {
   maxToolResultChars?: number;
   /** Approximate max context tokens before triggering early compaction (default 60000). */
   maxContextTokens?: number;
+  /** Fetch timeout in seconds (default 120). Prevents indefinite hanging on slow APIs. */
+  fetchTimeout?: number;
 };
 
 type Message =
@@ -36,35 +38,53 @@ export class GenericProvider implements ChatProvider {
   readonly name: string;
   private maxToolResultChars: number;
   private maxContextTokens: number;
+  private fetchTimeoutMs: number;
 
   constructor(private config: GenericProviderConfig) {
     this.name = config.model;
     this.maxToolResultChars = config.maxToolResultChars ?? 4000;
     this.maxContextTokens = config.maxContextTokens ?? 60_000;
+    this.fetchTimeoutMs = (config.fetchTimeout ?? 120) * 1000;
+  }
+
+  private fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+  ): { promise: Promise<Response>; abort: () => void } {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.fetchTimeoutMs);
+    const promise = fetch(url, { ...init, signal: controller.signal }).finally(
+      () => clearTimeout(timer),
+    );
+    return { promise, abort: () => controller.abort() };
   }
 
   async summarize(
     messages: Array<{ role: string; content: string }>,
   ): Promise<string> {
-    const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
+    const { promise } = this.fetchWithTimeout(
+      `${this.config.baseUrl}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.config.model,
+          messages: [
+            {
+              role: "system",
+              content:
+                "Summarize the following conversation concisely in the same language. Preserve key facts, decisions, and context.",
+            },
+            ...messages.map((m) => ({ role: m.role, content: m.content })),
+          ],
+          max_tokens: 500,
+        }),
       },
-      body: JSON.stringify({
-        model: this.config.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "Summarize the following conversation concisely in the same language. Preserve key facts, decisions, and context.",
-          },
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-        max_tokens: 500,
-      }),
-    });
+    );
+    const res = await promise;
     if (!res.ok) throw new Error(`Summarize API error: ${res.status}`);
     const data: any = await res.json();
     return data.choices?.[0]?.message?.content ?? "[Summary unavailable]";
@@ -110,16 +130,23 @@ export class GenericProvider implements ChatProvider {
 
       let res: Response;
       try {
-        res = await fetch(`${this.config.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.config.apiKey}`,
+        const { promise } = this.fetchWithTimeout(
+          `${this.config.baseUrl}/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${this.config.apiKey}`,
+            },
+            body: JSON.stringify(body),
           },
-          body: JSON.stringify(body),
-        });
+        );
+        res = await promise;
       } catch (err: any) {
-        yield { type: "error", message: `Network error: ${err.message}` };
+        const msg = err.name === "AbortError"
+          ? "API 请求超时，请稍后再试。"
+          : `Network error: ${err.message}`;
+        yield { type: "error", message: msg };
         yield { type: "done", sessionId: "", costUsd: 0 };
         return;
       }
@@ -136,43 +163,53 @@ export class GenericProvider implements ChatProvider {
       const toolCalls: ToolCall[] = [];
       const toolCallArgs: Map<number, string> = new Map();
 
-      for await (const line of readSSELines(res.body)) {
-        if (line === "[DONE]") break;
+      try {
+        for await (const line of readSSELines(res.body)) {
+          if (line === "[DONE]") break;
 
-        let data: any;
-        try {
-          data = JSON.parse(line);
-        } catch {
-          continue;
-        }
+          let data: any;
+          try {
+            data = JSON.parse(line);
+          } catch {
+            continue;
+          }
 
-        const delta = data.choices?.[0]?.delta;
-        if (!delta) continue;
+          const delta = data.choices?.[0]?.delta;
+          if (!delta) continue;
 
-        if (delta.content) {
-          assistantContent += delta.content;
-          yield { type: "text", content: delta.content };
-        }
+          if (delta.content) {
+            assistantContent += delta.content;
+            yield { type: "text", content: delta.content };
+          }
 
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const idx = tc.index ?? 0;
-            if (tc.id) {
-              toolCalls[idx] = {
-                id: tc.id,
-                type: "function",
-                function: { name: tc.function?.name ?? "", arguments: "" },
-              };
-            }
-            if (tc.function?.arguments) {
-              const prev = toolCallArgs.get(idx) ?? "";
-              toolCallArgs.set(idx, prev + tc.function.arguments);
-            }
-            if (tc.function?.name && toolCalls[idx]) {
-              toolCalls[idx].function.name = tc.function.name;
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0;
+              if (tc.id) {
+                toolCalls[idx] = {
+                  id: tc.id,
+                  type: "function",
+                  function: { name: tc.function?.name ?? "", arguments: "" },
+                };
+              }
+              if (tc.function?.arguments) {
+                const prev = toolCallArgs.get(idx) ?? "";
+                toolCallArgs.set(idx, prev + tc.function.arguments);
+              }
+              if (tc.function?.name && toolCalls[idx]) {
+                toolCalls[idx].function.name = tc.function.name;
+              }
             }
           }
         }
+      } catch (err: any) {
+        // Stream read error — yield error and finish gracefully
+        const msg = err.name === "AbortError"
+          ? "API 响应超时，请稍后再试。"
+          : `Stream error: ${err.message}`;
+        yield { type: "error", message: msg };
+        yield { type: "done", sessionId: "", costUsd: 0 };
+        return;
       }
 
       for (const [idx, args] of toolCallArgs) {
@@ -255,19 +292,23 @@ export class GenericProvider implements ChatProvider {
     });
 
     try {
-      const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.config.apiKey}`,
+      const { promise } = this.fetchWithTimeout(
+        `${this.config.baseUrl}/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.config.model,
+            messages,
+            stream: true,
+            // Intentionally omit `tools` so the model cannot call any
+          }),
         },
-        body: JSON.stringify({
-          model: this.config.model,
-          messages,
-          stream: true,
-          // Intentionally omit `tools` so the model cannot call any
-        }),
-      });
+      );
+      const res = await promise;
 
       if (!res.ok || !res.body) {
         yield { type: "done", sessionId: "", costUsd: 0 };

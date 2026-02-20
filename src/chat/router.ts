@@ -139,50 +139,89 @@ export function chatRouter(
 
       return streamSSE(c, async (stream) => {
         let assistantText = "";
-
-        // 6. Stream from provider
-        for await (const event of provider.stream({
-          message,
-          sessionId: session.providerSessionId ?? undefined,
-          history,
-        })) {
-          if (event.type === "text") {
-            assistantText += event.content;
+        // SSE heartbeat — prevents browser/proxy from closing idle connections
+        // during long tool execution gaps
+        const heartbeat = setInterval(async () => {
+          try {
+            await stream.writeSSE({ data: "", event: "heartbeat" });
+          } catch {
+            // Stream already closed — will be cleaned up below
           }
+        }, 15_000);
 
-          if (event.type === "done") {
-            // 7. Record assistant reply
+        try {
+          // 6. Stream from provider
+          for await (const event of provider.stream({
+            message,
+            sessionId: session.providerSessionId ?? undefined,
+            history,
+          })) {
+            if (event.type === "text") {
+              assistantText += event.content;
+            }
+
+            if (event.type === "done") {
+              // 7. Record assistant reply
+              if (assistantText) {
+                sessionManager.appendMessage(session.id, {
+                  role: "assistant",
+                  content: assistantText,
+                });
+              }
+
+              // 8. Store provider session ID
+              if (event.sessionId) {
+                sessionManager.updateProviderSessionId(
+                  session.id,
+                  event.sessionId,
+                );
+              }
+
+              // 9. Replace sessionId with ours
+              await stream.writeSSE({
+                data: JSON.stringify({ ...event, sessionId: session.id }),
+              });
+
+              // 10. Emit event for audit log (async, non-blocking)
+              const hubEvent = webChatAdapter.toEvent({
+                message,
+                sessionId: session.id,
+              });
+              if (hubEvent) {
+                eventBus.emit(hubEvent).catch(() => {});
+              }
+            } else {
+              await stream.writeSSE({ data: JSON.stringify(event) });
+            }
+          }
+        } catch (err: any) {
+          console.error("[chat] Stream error:", err.message ?? err);
+          try {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "error",
+                message: "Stream interrupted: " + (err.message ?? "unknown error"),
+              }),
+            });
+            // Save partial response if any
             if (assistantText) {
               sessionManager.appendMessage(session.id, {
                 role: "assistant",
                 content: assistantText,
               });
             }
-
-            // 8. Store provider session ID
-            if (event.sessionId) {
-              sessionManager.updateProviderSessionId(
-                session.id,
-                event.sessionId,
-              );
-            }
-
-            // 9. Replace sessionId with ours
             await stream.writeSSE({
-              data: JSON.stringify({ ...event, sessionId: session.id }),
+              data: JSON.stringify({
+                type: "done",
+                sessionId: session.id,
+                costUsd: 0,
+              }),
             });
-
-            // 10. Emit event for audit log (async, non-blocking)
-            const hubEvent = webChatAdapter.toEvent({
-              message,
-              sessionId: session.id,
-            });
-            if (hubEvent) {
-              eventBus.emit(hubEvent).catch(() => {});
-            }
-          } else {
-            await stream.writeSSE({ data: JSON.stringify(event) });
+          } catch {
+            // Stream already closed — nothing more we can do
           }
+        } finally {
+          clearInterval(heartbeat);
         }
       });
     });

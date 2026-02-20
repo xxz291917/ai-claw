@@ -15,18 +15,8 @@ import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { faultHealingRoutes } from "./routes/fault-healing.js";
 import { chatRouter } from "./chat/router.js";
 import { parseChatUsers, chatAuthMiddleware } from "./chat/auth.js";
-import { ClaudeProvider } from "./chat/claude-provider.js";
-import { GenericProvider } from "./chat/generic-provider.js";
-import { buildSystemPrompt } from "./chat/system-prompt.js";
-import { createSentryQueryTool } from "./agent/tools/sentry-query.js";
-import { createSkillReaderTool } from "./agent/tools/skill-reader.js";
-import { createWebSearchTool } from "./agent/tools/web-search.js";
-import { createWebFetchTool } from "./agent/tools/web-fetch.js";
-import { createBashExecTool } from "./agent/tools/bash-exec.js";
-import { createClaudeCodeTool } from "./agent/tools/claude-code.js";
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import type { ToolDef } from "./chat/generic-provider.js";
-import type { ChatProvider } from "./chat/types.js";
+import { setupChatProvider } from "./chat/setup.js";
+import { buildToolSuite } from "./tools/suite.js";
 
 // New architecture imports
 import { EventBus } from "./core/event-bus.js";
@@ -114,6 +104,10 @@ export function createApp(): {
     return c.json(task);
   });
 
+  // --- Shared Tool Suite (used by both Fault Healing and Chat) ---
+  const skillsDir = resolve(__dirname, "skills");
+  const toolSuite = buildToolSuite(env, skillsDir);
+
   // --- Fault Healing Pipeline (EventBus-integrated) ---
   let workflow: FaultHealingWorkflow | null = null;
 
@@ -127,21 +121,19 @@ export function createApp(): {
 
     const skillPath = resolve(__dirname, "skills", "fault-healing.md");
     const skillContent = readFileSync(skillPath, "utf-8");
-
-    const agentConfig = {
-      workspaceDir: env.WORKSPACE_DIR,
-      sentryConfig: {
-        authToken: env.SENTRY_AUTH_TOKEN,
-        org: env.SENTRY_ORG,
-        project: env.SENTRY_PROJECT,
-      },
-      skillContent,
-      env: { GH_TOKEN: env.GH_TOKEN },
-    };
+    const fhSystemPrompt = skillContent +
+      "\n\n## Available Tools\n\n" +
+      toolSuite.descriptions.map((d) => `- ${d}`).join("\n");
 
     workflow = new FaultHealingWorkflow({
       store,
-      runAgent: (prompt) => runAgent(prompt, agentConfig),
+      runAgent: (prompt) =>
+        runAgent(prompt, {
+          workspaceDir: env.WORKSPACE_DIR,
+          systemPrompt: fhSystemPrompt,
+          mcpServers: toolSuite.mcpServers,
+          env: { GH_TOKEN: env.GH_TOKEN! },
+        }),
       sendLarkCard: (card) =>
         sendLarkCard(larkClient, env.LARK_NOTIFY_CHAT_ID!, card),
     });
@@ -162,199 +154,8 @@ export function createApp(): {
     console.log("[init] Fault healing pipeline disabled (missing Sentry/Lark/GitHub config)");
   }
 
-  // --- Chat Assistant ---
-  const skillsDir = resolve(__dirname, "skills");
-  const chatToolDescriptions: string[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mcpTools: Array<ReturnType<typeof tool<any>>> = [];
-  const genericTools: ToolDef[] = [];
-
-  // get_skill tool (always available)
-  const skillReader = createSkillReaderTool(skillsDir);
-  mcpTools.push(
-    tool(skillReader.name, skillReader.description, skillReader.inputSchema, skillReader.handler),
-  );
-  genericTools.push({
-    name: skillReader.name,
-    description: skillReader.description,
-    parameters: {
-      type: "object",
-      properties: {
-        skill_name: { type: "string", description: "Skill name (without .md extension)" },
-      },
-      required: ["skill_name"],
-    },
-    handler: skillReader.plainHandler,
-  });
-  chatToolDescriptions.push(
-    "`get_skill(skill_name)` — Load full instructions for a skill by name",
-  );
-
-  // sentry_query tool (when Sentry config available)
-  if (env.SENTRY_AUTH_TOKEN && env.SENTRY_ORG && env.SENTRY_PROJECT) {
-    const sentryTool = createSentryQueryTool({
-      authToken: env.SENTRY_AUTH_TOKEN,
-      org: env.SENTRY_ORG,
-      project: env.SENTRY_PROJECT,
-    });
-    mcpTools.push(
-      tool(sentryTool.name, sentryTool.description, sentryTool.inputSchema, sentryTool.handler),
-    );
-    genericTools.push({
-      name: sentryTool.name,
-      description: sentryTool.description,
-      parameters: {
-        type: "object",
-        properties: {
-          issue_id: { type: "string", description: "Sentry issue ID" },
-        },
-        required: ["issue_id"],
-      },
-      handler: async (args: { issue_id: string }) => {
-        const result = await sentryTool.handler(args);
-        return result.content[0].text;
-      },
-    });
-    chatToolDescriptions.push(
-      "`sentry_query(issue_id)` — Query Sentry for issue details, stacktrace, affected users",
-    );
-  }
-
-  // web_search tool (when BRAVE_API_KEY available)
-  if (env.BRAVE_API_KEY) {
-    const webSearchTool = createWebSearchTool({ apiKey: env.BRAVE_API_KEY });
-    mcpTools.push(
-      tool(webSearchTool.name, webSearchTool.description, webSearchTool.inputSchema, webSearchTool.handler),
-    );
-    genericTools.push({
-      name: webSearchTool.name,
-      description: webSearchTool.description,
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "Search query string" },
-          count: { type: "number", description: "Number of results (1-10, default 5)" },
-        },
-        required: ["query"],
-      },
-      handler: webSearchTool.plainHandler,
-    });
-    chatToolDescriptions.push(
-      "`web_search(query, count?)` — Search the web for current information",
-    );
-  }
-
-  // web_fetch tool (always available; Firecrawl optional enhancement)
-  const webFetchTool = createWebFetchTool({
-    firecrawlApiKey: env.FIRECRAWL_API_KEY,
-  });
-  mcpTools.push(
-    tool(webFetchTool.name, webFetchTool.description, webFetchTool.inputSchema, webFetchTool.handler),
-  );
-  genericTools.push({
-    name: webFetchTool.name,
-    description: webFetchTool.description,
-    parameters: {
-      type: "object",
-      properties: {
-        url: { type: "string", description: "HTTP or HTTPS URL to fetch" },
-        maxChars: { type: "number", description: "Maximum characters (default 50000)" },
-      },
-      required: ["url"],
-    },
-    handler: webFetchTool.plainHandler,
-  });
-  chatToolDescriptions.push(
-    "`web_fetch(url, maxChars?)` — Fetch and extract readable content from a URL",
-  );
-
-  // bash_exec tool (when enabled, default true)
-  if (env.BASH_EXEC_ENABLED === "true") {
-    const bashExecTool = createBashExecTool({
-      defaultCwd: env.WORKSPACE_DIR,
-      defaultTimeoutMs: env.BASH_EXEC_TIMEOUT * 1000,
-      maxTimeoutMs: env.BASH_EXEC_MAX_TIMEOUT * 1000,
-      allowedCommands: env.BASH_EXEC_ALLOWED_COMMANDS
-        ?.split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    });
-    mcpTools.push(
-      tool(bashExecTool.name, bashExecTool.description, bashExecTool.inputSchema, bashExecTool.handler),
-    );
-    genericTools.push({
-      name: bashExecTool.name,
-      description: bashExecTool.description,
-      parameters: {
-        type: "object",
-        properties: {
-          command: { type: "string", description: "Shell command to execute" },
-          timeout: { type: "number", description: "Timeout in seconds (default 30, max 300)" },
-        },
-        required: ["command"],
-      },
-      handler: bashExecTool.plainHandler,
-    });
-    chatToolDescriptions.push(
-      "`bash_exec(command, timeout?)` — Execute a shell command in the workspace directory",
-    );
-  }
-
-  // claude_code tool (always available — uses claude CLI's own auth, no API key needed)
-  const claudeCodeTool = createClaudeCodeTool({
-    workspaceDir: env.WORKSPACE_DIR,
-  });
-  mcpTools.push(
-    tool(claudeCodeTool.name, claudeCodeTool.description, claudeCodeTool.inputSchema, claudeCodeTool.handler),
-  );
-  genericTools.push({
-    name: claudeCodeTool.name,
-    description: claudeCodeTool.description,
-    parameters: {
-      type: "object",
-      properties: {
-        task: { type: "string", description: "Clear, specific description of the code task" },
-        timeout: { type: "number", description: "Timeout in seconds (default 300, max 600)" },
-      },
-      required: ["task"],
-    },
-    handler: claudeCodeTool.plainHandler,
-  });
-  chatToolDescriptions.push(
-    "`claude_code(task, timeout?)` — Delegate a code task to Claude Code sub-agent (read/write/edit files, search, run tests)",
-  );
-
-  const chatMcpServers = {
-    "ai-hub-tools": createSdkMcpServer({ name: "ai-hub-tools", tools: mcpTools }),
-  };
-
-  // Build rich system prompt with project knowledge + skills
-  const systemPrompt = buildSystemPrompt({
-    workspaceDir: env.WORKSPACE_DIR,
-    skillsDir,
-    tools: chatToolDescriptions,
-  });
-
-  let chatProvider: ChatProvider;
-  if (env.CHAT_PROVIDER === "generic" && env.CHAT_API_BASE && env.CHAT_API_KEY) {
-    chatProvider = new GenericProvider({
-      baseUrl: env.CHAT_API_BASE,
-      apiKey: env.CHAT_API_KEY,
-      model: env.CHAT_MODEL ?? "deepseek-chat",
-      systemPrompt,
-      tools: genericTools,
-      maxToolResultChars: env.CHAT_MAX_TOOL_RESULT_CHARS,
-      maxContextTokens: env.CHAT_MAX_CONTEXT_TOKENS,
-    });
-  } else {
-    chatProvider = new ClaudeProvider({
-      workspaceDir: env.WORKSPACE_DIR,
-      skillContent: systemPrompt,
-      env: env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {},
-      mcpServers: chatMcpServers,
-    });
-  }
-
+  // --- Chat Assistant (reuses shared tool suite) ---
+  const { provider: chatProvider } = setupChatProvider(env, skillsDir, toolSuite);
   chatRouter(app, chatProvider, { sessionManager, eventBus, webChatAdapter, memoryManager });
 
   // Serve static files (chat UI)

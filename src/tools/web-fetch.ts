@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { UnifiedToolDef } from "./types.js";
 
 const DEFAULT_MAX_CHARS = 50_000;
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; AI-Hub/1.0)";
@@ -17,7 +18,7 @@ type WebFetchConfig = {
  * Uses Firecrawl API when available, falls back to basic HTML stripping.
  * Results are cached for 15 minutes.
  */
-export function createWebFetchTool(config: WebFetchConfig = {}) {
+export function createWebFetchTool(config: WebFetchConfig = {}): UnifiedToolDef {
   return {
     name: "web_fetch",
     description:
@@ -30,18 +31,15 @@ export function createWebFetchTool(config: WebFetchConfig = {}) {
         .optional()
         .describe("Maximum characters to return (default 50000)"),
     },
-    handler: async (args: { url: string; maxChars?: number }) => {
-      const text = await fetchUrl(
-        args.url,
-        args.maxChars,
-        config.firecrawlApiKey,
-      );
-      return { content: [{ type: "text" as const, text }] };
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "HTTP or HTTPS URL to fetch" },
+        maxChars: { type: "number", description: "Maximum characters to return (default 50000)" },
+      },
+      required: ["url"],
     },
-    plainHandler: async (args: {
-      url: string;
-      maxChars?: number;
-    }): Promise<string> => {
+    execute: async (args: { url: string; maxChars?: number }) => {
       return fetchUrl(args.url, args.maxChars, config.firecrawlApiKey);
     },
   };

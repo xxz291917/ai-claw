@@ -12,8 +12,8 @@ import { randomUUID } from "node:crypto";
 import {
   safePath,
   createFileTools,
-} from "../../../src/agent/tools/file-tools.js";
-import type { ToolDef } from "../../../src/chat/generic-provider.js";
+} from "../../src/tools/file-tools.js";
+import type { UnifiedToolDef } from "../../src/tools/types.js";
 
 let workspace: string;
 
@@ -52,8 +52,8 @@ describe("safePath", () => {
 // file_read
 // ---------------------------------------------------------------------------
 describe("file_read", () => {
-  let tools: ToolDef[];
-  let fileRead: ToolDef;
+  let tools: UnifiedToolDef[];
+  let fileRead: UnifiedToolDef;
 
   beforeEach(() => {
     tools = createFileTools({ workspaceDir: workspace });
@@ -64,7 +64,7 @@ describe("file_read", () => {
   it("reads file with line numbers", async () => {
     writeFileSync(join(workspace, "hello.txt"), "line1\nline2\nline3\n");
 
-    const result = await fileRead.handler({ path: "hello.txt" });
+    const result = await fileRead.execute({ path: "hello.txt" });
 
     expect(result).toContain("1| line1");
     expect(result).toContain("2| line2");
@@ -77,7 +77,7 @@ describe("file_read", () => {
     );
     writeFileSync(join(workspace, "ten.txt"), lines);
 
-    const result = await fileRead.handler({
+    const result = await fileRead.execute({
       path: "ten.txt",
       offset: 2,
       limit: 3,
@@ -93,12 +93,12 @@ describe("file_read", () => {
   });
 
   it("returns error for nonexistent file", async () => {
-    const result = await fileRead.handler({ path: "no-such-file.txt" });
+    const result = await fileRead.execute({ path: "no-such-file.txt" });
     expect(result.toLowerCase()).toContain("error");
   });
 
   it("rejects path outside workspace", async () => {
-    const result = await fileRead.handler({ path: "../../etc/passwd" });
+    const result = await fileRead.execute({ path: "../../etc/passwd" });
     expect(result).toContain("Path outside workspace");
   });
 
@@ -112,7 +112,7 @@ describe("file_read", () => {
       maxReadBytes: 100,
     });
     const smallRead = smallTools.find((t) => t.name === "file_read")!;
-    const result = await smallRead.handler({ path: "big.txt" });
+    const result = await smallRead.execute({ path: "big.txt" });
 
     expect(result.length).toBeLessThanOrEqual(150); // 100 + truncation notice
     expect(result).toContain("truncated");
@@ -123,8 +123,8 @@ describe("file_read", () => {
 // file_write
 // ---------------------------------------------------------------------------
 describe("file_write", () => {
-  let tools: ToolDef[];
-  let fileWrite: ToolDef;
+  let tools: UnifiedToolDef[];
+  let fileWrite: UnifiedToolDef;
 
   beforeEach(() => {
     tools = createFileTools({ workspaceDir: workspace });
@@ -133,7 +133,7 @@ describe("file_write", () => {
   });
 
   it("creates new file", async () => {
-    const result = await fileWrite.handler({
+    const result = await fileWrite.execute({
       path: "new-file.txt",
       content: "hello world",
     });
@@ -144,7 +144,7 @@ describe("file_write", () => {
   });
 
   it("creates parent directories", async () => {
-    const result = await fileWrite.handler({
+    const result = await fileWrite.execute({
       path: "deep/nested/file.txt",
       content: "nested content",
     });
@@ -163,7 +163,7 @@ describe("file_write", () => {
   it("overwrites existing file", async () => {
     writeFileSync(join(workspace, "overwrite.txt"), "old content");
 
-    await fileWrite.handler({
+    await fileWrite.execute({
       path: "overwrite.txt",
       content: "new content",
     });
@@ -173,7 +173,7 @@ describe("file_write", () => {
   });
 
   it("rejects path outside workspace", async () => {
-    const result = await fileWrite.handler({
+    const result = await fileWrite.execute({
       path: "../../etc/evil.txt",
       content: "bad",
     });

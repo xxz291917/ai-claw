@@ -18,7 +18,9 @@ export class Executor {
     const agent = this.deps.registry.get(plan.agent);
     if (!agent) throw new Error(`Agent not found: ${plan.agent}`);
 
-    const taskId = event.id;
+    // Use plan-provided taskId when available (e.g. fault healing creates the
+    // task before emitting the event). Falls back to event.id for other flows.
+    const taskId = (plan.inputs.taskId as string) || event.id;
 
     const execution = {
       taskId,

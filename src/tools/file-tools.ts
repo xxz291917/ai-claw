@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import type { ToolDef } from "../../chat/generic-provider.js";
+import { z } from "zod";
+import type { UnifiedToolDef } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -29,41 +30,33 @@ export function safePath(userPath: string, workspaceDir: string): string {
 // ---------------------------------------------------------------------------
 // createFileTools — factory
 // ---------------------------------------------------------------------------
-export function createFileTools(config: FileToolsConfig): ToolDef[] {
+export function createFileTools(config: FileToolsConfig): UnifiedToolDef[] {
   const { workspaceDir } = config;
   const maxReadBytes = config.maxReadBytes ?? 50_000;
 
   // -----------------------------------------------------------------------
   // file_read
   // -----------------------------------------------------------------------
-  const fileRead: ToolDef = {
+  const fileRead: UnifiedToolDef = {
     name: "file_read",
     description:
       "Read a file from the workspace and return its contents with line numbers. " +
       "Supports pagination via offset (0-based line offset) and limit (max lines).",
+    inputSchema: {
+      path: z.string().describe("File path relative to workspace"),
+      offset: z.number().optional().describe("Line offset (0-based, default 0)"),
+      limit: z.number().optional().describe("Max lines to return"),
+    },
     parameters: {
       type: "object",
       properties: {
-        path: {
-          type: "string",
-          description: "File path relative to workspace",
-        },
-        offset: {
-          type: "number",
-          description: "Line offset (0-based, default 0)",
-        },
-        limit: {
-          type: "number",
-          description: "Max lines to return",
-        },
+        path: { type: "string", description: "File path relative to workspace" },
+        offset: { type: "number", description: "Line offset (0-based, default 0)" },
+        limit: { type: "number", description: "Max lines to return" },
       },
       required: ["path"],
     },
-    handler: async (args: {
-      path: string;
-      offset?: number;
-      limit?: number;
-    }): Promise<string> => {
+    execute: async (args: { path: string; offset?: number; limit?: number }) => {
       let absPath: string;
       try {
         absPath = safePath(args.path, workspaceDir);
@@ -79,14 +72,10 @@ export function createFileTools(config: FileToolsConfig): ToolDef[] {
       }
 
       const allLines = raw.split("\n");
-      // If file ends with newline, the split produces an extra empty string;
-      // keep it so line numbers match the real file content.
-
       const offset = args.offset ?? 0;
       const limit = args.limit ?? allLines.length;
       const sliced = allLines.slice(offset, offset + limit);
 
-      // Format with 1-based line numbers
       const maxLineNo = offset + sliced.length;
       const numWidth = String(maxLineNo).length;
 
@@ -97,7 +86,6 @@ export function createFileTools(config: FileToolsConfig): ToolDef[] {
         })
         .join("\n");
 
-      // Truncate at maxReadBytes
       if (output.length > maxReadBytes) {
         output =
           output.slice(0, maxReadBytes) +
@@ -111,29 +99,24 @@ export function createFileTools(config: FileToolsConfig): ToolDef[] {
   // -----------------------------------------------------------------------
   // file_write
   // -----------------------------------------------------------------------
-  const fileWrite: ToolDef = {
+  const fileWrite: UnifiedToolDef = {
     name: "file_write",
     description:
       "Write content to a file in the workspace. Creates parent directories if needed. " +
       "Overwrites the file if it already exists.",
+    inputSchema: {
+      path: z.string().describe("File path relative to workspace"),
+      content: z.string().describe("Content to write to the file"),
+    },
     parameters: {
       type: "object",
       properties: {
-        path: {
-          type: "string",
-          description: "File path relative to workspace",
-        },
-        content: {
-          type: "string",
-          description: "Content to write to the file",
-        },
+        path: { type: "string", description: "File path relative to workspace" },
+        content: { type: "string", description: "Content to write to the file" },
       },
       required: ["path", "content"],
     },
-    handler: async (args: {
-      path: string;
-      content: string;
-    }): Promise<string> => {
+    execute: async (args: { path: string; content: string }) => {
       let absPath: string;
       try {
         absPath = safePath(args.path, workspaceDir);

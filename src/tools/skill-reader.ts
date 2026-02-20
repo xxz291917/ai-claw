@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve, basename } from "node:path";
 import { z } from "zod";
-import { parseSkillFrontmatter } from "../../skills/frontmatter.js";
+import { parseSkillFrontmatter } from "../skills/frontmatter.js";
+import type { UnifiedToolDef } from "./types.js";
 
 /**
  * Creates a get_skill tool that lets the LLM load full skill content on demand.
@@ -9,7 +10,7 @@ import { parseSkillFrontmatter } from "../../skills/frontmatter.js";
  * System prompt injects skill summaries; this tool provides the full text
  * when the LLM decides a skill matches the current task.
  */
-export function createSkillReaderTool(skillsDir: string) {
+export function createSkillReaderTool(skillsDir: string): UnifiedToolDef {
   // Pre-scan available skill names (with descriptions from frontmatter)
   const available = listSkillSummaries(skillsDir);
 
@@ -24,34 +25,20 @@ export function createSkillReaderTool(skillsDir: string) {
         .string()
         .describe("Skill name (without .md extension), e.g. 'fault-healing'"),
     },
-    handler: async (args: { skill_name: string }) => {
-      const filePath = resolve(skillsDir, `${args.skill_name}.md`);
-      try {
-        const content = readFileSync(filePath, "utf-8");
-        return {
-          content: [{ type: "text" as const, text: content }],
-        };
-      } catch {
-        const names = listSkillSummaries(skillsDir).map((s) => s.name);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Skill "${args.skill_name}" not found. Available: ${names.join(", ") || "none"}`,
-            },
-          ],
-          isError: true,
-        };
-      }
+    parameters: {
+      type: "object",
+      properties: {
+        skill_name: { type: "string", description: "Skill name (without .md extension)" },
+      },
+      required: ["skill_name"],
     },
-    /** Simplified handler for GenericProvider (returns plain string) */
-    plainHandler: async (args: { skill_name: string }): Promise<string> => {
+    execute: async (args: { skill_name: string }) => {
       const filePath = resolve(skillsDir, `${args.skill_name}.md`);
       try {
         return readFileSync(filePath, "utf-8");
       } catch {
         const names = listSkillSummaries(skillsDir).map((s) => s.name);
-        return `Skill "${args.skill_name}" not found. Available: ${names.join(", ") || "none"}`;
+        return `Error: Skill "${args.skill_name}" not found. Available: ${names.join(", ") || "none"}`;
       }
     },
   };

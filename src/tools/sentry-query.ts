@@ -1,15 +1,17 @@
 import { z } from "zod";
+import type { UnifiedToolDef } from "./types.js";
 
 type SentryConfig = {
+  baseUrl?: string;
   authToken: string;
   org: string;
   project: string;
 };
 
 /**
- * Creates a sentry_query tool definition for the Claude Agent SDK.
+ * Creates a sentry_query tool definition.
  */
-export function createSentryQueryTool(config: SentryConfig) {
+export function createSentryQueryTool(config: SentryConfig): UnifiedToolDef {
   return {
     name: "sentry_query",
     description:
@@ -17,28 +19,28 @@ export function createSentryQueryTool(config: SentryConfig) {
     inputSchema: {
       issue_id: z.string().describe("Sentry issue ID"),
     },
-    handler: async (args: { issue_id: string }) => {
-      const url = `https://sentry.io/api/0/organizations/${config.org}/issues/${args.issue_id}/`;
+    parameters: {
+      type: "object",
+      properties: {
+        issue_id: { type: "string", description: "Sentry issue ID" },
+      },
+      required: ["issue_id"],
+    },
+    execute: async (args: { issue_id: string }) => {
+      const base = (config.baseUrl ?? "https://sentry.io").replace(/\/+$/, "");
+      const url = `${base}/api/0/issues/${args.issue_id}/`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${config.authToken}` },
       });
 
       if (!res.ok) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Sentry API error: ${res.status} ${res.statusText}`,
-            },
-          ],
-          isError: true,
-        };
+        return `Error: Sentry API error: ${res.status} ${res.statusText}`;
       }
 
       const issue = (await res.json()) as Record<string, unknown>;
 
       // Fetch latest event for stacktrace
-      const eventUrl = `https://sentry.io/api/0/organizations/${config.org}/issues/${args.issue_id}/events/latest/`;
+      const eventUrl = `${base}/api/0/issues/${args.issue_id}/events/latest/`;
       const eventRes = await fetch(eventUrl, {
         headers: { Authorization: `Bearer ${config.authToken}` },
       });
@@ -58,11 +60,7 @@ export function createSentryQueryTool(config: SentryConfig) {
         stacktrace: event ? extractStacktrace(event) : "unavailable",
       };
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(summary, null, 2) },
-        ],
-      };
+      return JSON.stringify(summary, null, 2);
     },
   };
 }

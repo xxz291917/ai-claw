@@ -230,6 +230,60 @@ describe("GenericProvider", () => {
     expect(summaryReqBody.tools).toBeUndefined();
   });
 
+  it("should yield timeout error when fetch is aborted", async () => {
+    const { GenericProvider } = await import(
+      "../../src/chat/generic-provider.js"
+    );
+
+    // Simulate AbortError (what AbortController throws)
+    const abortError = new DOMException("The operation was aborted", "AbortError");
+    mockFetch.mockRejectedValueOnce(abortError);
+
+    const provider = new GenericProvider({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "test-key",
+      model: "test-model",
+      fetchTimeout: 1, // 1 second
+    });
+
+    const events: ChatEvent[] = [];
+    for await (const event of provider.stream({ message: "hi" })) {
+      events.push(event);
+    }
+
+    expect(events[0]).toEqual({ type: "error", message: "API 请求超时，请稍后再试。" });
+    expect(events[1].type).toBe("done");
+  });
+
+  it("should pass AbortSignal to fetch", async () => {
+    const { GenericProvider } = await import(
+      "../../src/chat/generic-provider.js"
+    );
+
+    const sseBody = [
+      `data: {"choices":[{"delta":{"role":"assistant","content":"ok"}}]}\n\n`,
+      `data: [DONE]\n\n`,
+    ].join("");
+
+    mockFetch.mockResolvedValueOnce(sseResponse(sseBody));
+
+    const provider = new GenericProvider({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "test-key",
+      model: "test-model",
+      fetchTimeout: 60,
+    });
+
+    const events: ChatEvent[] = [];
+    for await (const event of provider.stream({ message: "hi" })) {
+      events.push(event);
+    }
+
+    // Verify that fetch was called with a signal
+    const fetchCall = mockFetch.mock.calls[0];
+    expect(fetchCall[1].signal).toBeInstanceOf(AbortSignal);
+  });
+
   it("should handle API errors", async () => {
     const { GenericProvider } = await import(
       "../../src/chat/generic-provider.js"

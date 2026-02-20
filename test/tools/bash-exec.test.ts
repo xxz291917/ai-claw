@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createBashExecTool } from "../../../src/agent/tools/bash-exec.js";
+import { createBashExecTool } from "../../src/tools/bash-exec.js";
 
 describe("createBashExecTool", () => {
   const defaultConfig = {
@@ -11,8 +11,7 @@ describe("createBashExecTool", () => {
 
   it("should execute a simple command", async () => {
     const tool = createBashExecTool(defaultConfig);
-    const result = await tool.handler({ command: "echo hello" });
-    const text = result.content[0].text;
+    const text = await tool.execute({ command: "echo hello" });
 
     expect(text).toContain("$ echo hello");
     expect(text).toContain("hello");
@@ -21,8 +20,7 @@ describe("createBashExecTool", () => {
 
   it("should handle non-zero exit codes without throwing", async () => {
     const tool = createBashExecTool(defaultConfig);
-    const result = await tool.handler({ command: "false" });
-    const text = result.content[0].text;
+    const text = await tool.execute({ command: "false" });
 
     expect(text).toContain("Exit code: 1");
   });
@@ -32,8 +30,7 @@ describe("createBashExecTool", () => {
       ...defaultConfig,
       defaultTimeoutMs: 500,
     });
-    const result = await tool.handler({ command: "sleep 10" });
-    const text = result.content[0].text;
+    const text = await tool.execute({ command: "sleep 10" });
 
     expect(text).toContain("timed out");
   }, 10000);
@@ -43,10 +40,9 @@ describe("createBashExecTool", () => {
       ...defaultConfig,
       maxOutputChars: 100,
     });
-    const result = await tool.handler({
+    const text = await tool.execute({
       command: "printf '%0.s-' {1..200}",
     });
-    const text = result.content[0].text;
 
     expect(text.length).toBeLessThanOrEqual(130); // 100 + truncation marker
     expect(text).toContain("...[truncated]...");
@@ -57,12 +53,11 @@ describe("createBashExecTool", () => {
       ...defaultConfig,
       allowedCommands: ["echo", "cat"],
     });
-    const result = await tool.handler({ command: "ls -la" });
-    const text = result.content[0].text;
+    const text = await tool.execute({ command: "ls -la" });
 
     expect(text).toContain("not allowed");
     expect(text).toContain("ls");
-    expect(result.isError).toBe(true);
+    expect(text).toContain("Error:");
   });
 
   it("should allow commands in allowlist", async () => {
@@ -70,8 +65,7 @@ describe("createBashExecTool", () => {
       ...defaultConfig,
       allowedCommands: ["echo", "cat"],
     });
-    const result = await tool.handler({ command: "echo allowed" });
-    const text = result.content[0].text;
+    const text = await tool.execute({ command: "echo allowed" });
 
     expect(text).toContain("allowed");
     expect(text).toContain("Exit code: 0");
@@ -83,18 +77,17 @@ describe("createBashExecTool", () => {
       maxTimeoutMs: 1000,
     });
     // LLM requests 999 seconds but max is 1s — should timeout
-    const result = await tool.handler({
+    const text = await tool.execute({
       command: "sleep 10",
       timeout: 999,
     });
-    const text = result.content[0].text;
 
     expect(text).toContain("timed out");
   }, 10000);
 
-  it("plainHandler should return a string", async () => {
+  it("execute should return a string", async () => {
     const tool = createBashExecTool(defaultConfig);
-    const text = await tool.plainHandler({ command: "echo plain" });
+    const text = await tool.execute({ command: "echo plain" });
 
     expect(typeof text).toBe("string");
     expect(text).toContain("plain");
@@ -102,12 +95,40 @@ describe("createBashExecTool", () => {
 
   it("should capture stderr", async () => {
     const tool = createBashExecTool(defaultConfig);
-    const result = await tool.handler({
+    const text = await tool.execute({
       command: "echo err >&2",
     });
-    const text = result.content[0].text;
 
     expect(text).toContain("[stderr]");
     expect(text).toContain("err");
+  });
+
+  it("should return partial output on timeout", async () => {
+    const tool = createBashExecTool({
+      ...defaultConfig,
+      defaultTimeoutMs: 1000,
+    });
+    // Print some output then sleep — should capture the printed part
+    const text = await tool.execute({
+      command: "echo partial-before-sleep && sleep 30",
+    });
+
+    expect(text).toContain("partial-before-sleep");
+    expect(text).toContain("timed out");
+    expect(text).toContain("partial output above");
+  }, 10000);
+
+  it("should sanitize binary output", async () => {
+    const tool = createBashExecTool(defaultConfig);
+    // printf with null byte and bell character
+    const text = await tool.execute({
+      command: "printf 'hello\\x00world\\x07end'",
+    });
+
+    expect(text).toContain("hello");
+    expect(text).toContain("world");
+    expect(text).toContain("end");
+    expect(text).not.toContain("\x00");
+    expect(text).not.toContain("\x07");
   });
 });

@@ -562,7 +562,7 @@ function addCopyButton(bubbleEl, rawText) {
 // --- Code block copy buttons ---
 function addCodeCopyButtons(container) {
   container.querySelectorAll("pre code").forEach((codeEl) => {
-    hljs.highlightElement(codeEl);
+    if (typeof hljs !== "undefined") hljs.highlightElement(codeEl);
     const pre = codeEl.parentElement;
     if (pre.querySelector(".code-copy-btn")) return;
     const btn = document.createElement("button");
@@ -712,7 +712,14 @@ async function send() {
     }
   } catch (err) {
     showAssistant();
-    mdEl.innerHTML = renderMarkdown("[Connection error]");
+    if (fullText) {
+      // Preserve partial text and append error notice
+      fullText += "\n\n[Connection error]";
+      const { thinking, cleaned } = extractThinking(fullText);
+      mdEl.innerHTML = renderMarkdown(cleaned);
+    } else {
+      mdEl.innerHTML = renderMarkdown("[Connection error]");
+    }
   }
 
   // Finalize

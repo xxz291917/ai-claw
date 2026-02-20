@@ -1,17 +1,4 @@
-import {
-  query,
-  tool,
-  createSdkMcpServer,
-} from "@anthropic-ai/claude-agent-sdk";
-import { createSentryQueryTool } from "./tools/sentry-query.js";
-
-export type AgentConfig = {
-  workspaceDir: string;
-  sentryConfig: { authToken: string; org: string; project: string };
-  skillContent: string;
-  maxBudgetUsd?: number;
-  env?: Record<string, string>;
-};
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
 export type AgentResult = {
   text: string;
@@ -20,54 +7,24 @@ export type AgentResult = {
   error?: string;
 };
 
-/**
- * Build Claude Agent SDK options. Exported for testing.
- */
-export function buildAgentOptions(config: AgentConfig) {
-  const sentryTool = createSentryQueryTool(config.sentryConfig);
-
-  // Create in-process MCP server with custom tools
-  const mcpServer = createSdkMcpServer({
-    name: "ai-hub-tools",
-    tools: [
-      tool(
-        sentryTool.name,
-        sentryTool.description,
-        sentryTool.inputSchema,
-        sentryTool.handler,
-      ),
-    ],
-  });
-
-  return {
-    cwd: config.workspaceDir,
-    systemPrompt: config.skillContent,
-    tools: { type: "preset" as const, preset: "claude_code" as const },
-    mcpServers: {
-      "ai-hub-tools": mcpServer,
-    },
-    permissionMode: "bypassPermissions" as const,
-    allowDangerouslySkipPermissions: true,
-    maxTurns: 30,
-    maxBudgetUsd: config.maxBudgetUsd ?? 2.0,
-    env: {
-      ...process.env,
-      ...(config.env ?? {}),
-    },
-  };
-}
+export type BatchAgentConfig = {
+  workspaceDir: string;
+  systemPrompt: string;
+  mcpServers: Record<string, unknown>;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  env?: Record<string, string>;
+};
 
 /**
- * Run the Claude agent with a prompt.
- * Returns the final text result and metadata.
+ * Run the Claude agent in batch mode (collect final result).
+ * Used by the Fault Healing workflow.
  */
 export async function runAgent(
   prompt: string,
-  config: AgentConfig,
+  config: BatchAgentConfig,
   opts?: { abortSignal?: AbortSignal },
 ): Promise<AgentResult> {
-  const options = buildAgentOptions(config);
-
   const abortController = new AbortController();
   if (opts?.abortSignal) {
     opts.abortSignal.addEventListener("abort", () => abortController.abort());
@@ -76,8 +33,19 @@ export async function runAgent(
   const q = query({
     prompt,
     options: {
-      ...options,
+      cwd: config.workspaceDir,
+      systemPrompt: config.systemPrompt,
+      tools: { type: "preset" as const, preset: "claude_code" as const },
+      mcpServers: config.mcpServers as any,
+      permissionMode: "bypassPermissions" as const,
+      allowDangerouslySkipPermissions: true,
+      maxTurns: config.maxTurns ?? 30,
+      maxBudgetUsd: config.maxBudgetUsd ?? 2.0,
       abortController,
+      env: {
+        ...process.env,
+        ...(config.env ?? {}),
+      },
     },
   });
 

@@ -40,14 +40,13 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("sentry_query");
   });
 
-  it("should include runtime info", () => {
+  it("should include runtime info in identity section", () => {
     const prompt = buildSystemPrompt({
       workspaceDir: "/tmp/test",
       skillsDir: "/nonexistent",
     });
 
-    expect(prompt).toContain("Runtime");
-    expect(prompt).toContain("/tmp/test");
+    expect(prompt).toContain("Workspace: /tmp/test");
     expect(prompt).toContain(process.platform);
   });
 });

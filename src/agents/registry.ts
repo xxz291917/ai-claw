@@ -9,6 +9,10 @@ export class AgentRegistry {
     }
   }
 
+  register(agent: SubAgent): void {
+    this.agents.set(agent.name, agent);
+  }
+
   get(name: string): SubAgent | undefined {
     return this.agents.get(name);
   }

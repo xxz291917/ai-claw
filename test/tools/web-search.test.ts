@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createWebSearchTool } from "../../../src/agent/tools/web-search.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { createWebSearchTool } from "../../src/tools/web-search.js";
 
 describe("createWebSearchTool", () => {
   const originalFetch = globalThis.fetch;
@@ -30,11 +30,11 @@ describe("createWebSearchTool", () => {
     }) as any;
 
     const tool = createWebSearchTool({ apiKey: "test-key" });
-    const result = await tool.handler({ query: "typescript", count: 2 });
+    const text = await tool.execute({ query: "typescript", count: 2 });
 
-    expect(result.content[0].text).toContain("TypeScript Docs");
-    expect(result.content[0].text).toContain("https://typescriptlang.org");
-    expect(result.content[0].text).toContain("TS Playground");
+    expect(text).toContain("TypeScript Docs");
+    expect(text).toContain("https://typescriptlang.org");
+    expect(text).toContain("TS Playground");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("q=typescript"),
       expect.objectContaining({
@@ -53,9 +53,9 @@ describe("createWebSearchTool", () => {
     }) as any;
 
     const tool = createWebSearchTool({ apiKey: "test-key" });
-    const result = await tool.handler({ query: "test" });
+    const text = await tool.execute({ query: "test" });
 
-    expect(result.content[0].text).toContain("429");
+    expect(text).toContain("429");
   });
 
   it("should return 'No results' for empty response", async () => {
@@ -65,27 +65,8 @@ describe("createWebSearchTool", () => {
     }) as any;
 
     const tool = createWebSearchTool({ apiKey: "test-key" });
-    const text = await tool.plainHandler({ query: "xyznonexistent" });
+    const text = await tool.execute({ query: "xyznonexistent" });
 
     expect(text).toContain("No results");
-  });
-
-  it("plainHandler should return plain string", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        web: {
-          results: [
-            { title: "Result", url: "https://x.com", description: "desc" },
-          ],
-        },
-      }),
-    }) as any;
-
-    const tool = createWebSearchTool({ apiKey: "key" });
-    const text = await tool.plainHandler({ query: "test" });
-
-    expect(typeof text).toBe("string");
-    expect(text).toContain("Result");
   });
 });

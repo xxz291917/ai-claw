@@ -6,6 +6,7 @@ const envSchema = z.object({
 
   // Fault healing (optional — only needed for Sentry/Lark pipeline)
   ANTHROPIC_API_KEY: z.string().optional(),
+  SENTRY_BASE_URL: z.string().default("https://sentry.io"),
   SENTRY_AUTH_TOKEN: z.string().optional(),
   SENTRY_ORG: z.string().optional(),
   SENTRY_PROJECT: z.string().optional(),
@@ -33,6 +34,7 @@ const envSchema = z.object({
   CHAT_USERS: z.string().optional(),
   CHAT_MAX_TOOL_RESULT_CHARS: z.coerce.number().default(4000),
   CHAT_MAX_CONTEXT_TOKENS: z.coerce.number().default(60000),
+  CHAT_FETCH_TIMEOUT: z.coerce.number().default(120),
   // Memory / Embedding (reserved for future use)
   EMBEDDING_PROVIDER: z.enum(["none", "openai", "local"]).default("none"),
   EMBEDDING_API_KEY: z.string().optional(),
