@@ -2,8 +2,8 @@ import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { ChatProvider } from "./types.js";
 import type { SessionManager } from "../sessions/manager.js";
-import type { EventBus } from "../core/event-bus.js";
-import type { WebChatInputAdapter } from "../adapters/input/web-chat.js";
+import type { EventLog } from "../core/event-bus.js";
+import { createHubEvent } from "../core/hub-event.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { MemoryFlushFn } from "./compaction.js";
 import { handleCommand } from "./commands.js";
@@ -12,8 +12,7 @@ import { extractMemories } from "../memory/extractor.js";
 
 type ChatRouterDeps = {
   sessionManager: SessionManager;
-  eventBus: EventBus;
-  webChatAdapter: WebChatInputAdapter;
+  eventLog: EventLog;
   maxHistoryMessages?: number;
   memoryManager?: MemoryManager;
 };
@@ -43,7 +42,7 @@ export function chatRouter(
   provider: ChatProvider,
   deps: ChatRouterDeps,
 ): void {
-  const { sessionManager, eventBus, webChatAdapter, memoryManager } = deps;
+  const { sessionManager, eventLog, memoryManager } = deps;
   const maxHistoryMessages = deps.maxHistoryMessages ?? 40;
 
   app.post("/api/chat", async (c) => {
@@ -182,14 +181,15 @@ export function chatRouter(
                 data: JSON.stringify({ ...event, sessionId: session.id }),
               });
 
-              // 10. Emit event for audit log (async, non-blocking)
-              const hubEvent = webChatAdapter.toEvent({
-                message,
-                sessionId: session.id,
-              });
-              if (hubEvent) {
-                eventBus.emit(hubEvent).catch(() => {});
-              }
+              // 10. Audit log (non-blocking)
+              try {
+                eventLog.log(createHubEvent({
+                  type: "chat.web",
+                  source: "web_chat",
+                  payload: { message },
+                  context: { sessionId: session.id },
+                }));
+              } catch { /* best-effort */ }
             } else {
               await stream.writeSSE({ data: JSON.stringify(event) });
             }

@@ -3,8 +3,7 @@ import { Hono } from "hono";
 import type { ChatProvider, ChatEvent } from "../../src/chat/types.js";
 import { chatRouter } from "../../src/chat/router.js";
 import { SessionManager } from "../../src/sessions/manager.js";
-import { EventBus } from "../../src/core/event-bus.js";
-import { WebChatInputAdapter } from "../../src/adapters/input/web-chat.js";
+import { EventLog } from "../../src/core/event-bus.js";
 import { MemoryManager } from "../../src/memory/manager.js";
 import { createTestDb } from "../helpers.js";
 import "../../src/chat/auth.js";
@@ -23,11 +22,10 @@ function setup(events: ChatEvent[]) {
   const app = new Hono();
   const provider = mockProvider(events);
   const sessionManager = new SessionManager(db);
-  const eventBus = new EventBus(db);
-  const webChatAdapter = new WebChatInputAdapter();
+  const eventLog = new EventLog(db);
 
-  chatRouter(app, provider, { sessionManager, eventBus, webChatAdapter });
-  return { app, sessionManager, eventBus };
+  chatRouter(app, provider, { sessionManager, eventLog });
+  return { app, sessionManager, eventLog };
 }
 
 describe("chatRouter", () => {
@@ -102,8 +100,7 @@ describe("chatRouter", () => {
   it("resumes an existing session", async () => {
     const db = createTestDb();
     const sessionManager = new SessionManager(db);
-    const eventBus = new EventBus(db);
-    const webChatAdapter = new WebChatInputAdapter();
+    const eventLog = new EventLog(db);
 
     // Create a session first
     const session = sessionManager.create({
@@ -127,7 +124,7 @@ describe("chatRouter", () => {
     };
 
     const app = new Hono();
-    chatRouter(app, provider, { sessionManager, eventBus, webChatAdapter });
+    chatRouter(app, provider, { sessionManager, eventLog });
 
     const res = await app.request("/api/chat", {
       method: "POST",
@@ -171,8 +168,7 @@ describe("chatRouter", () => {
   it("injects relevant memories into history", async () => {
     const db = createTestDb();
     const sessionManager = new SessionManager(db);
-    const eventBus = new EventBus(db);
-    const webChatAdapter = new WebChatInputAdapter();
+    const eventLog = new EventLog(db);
     const memoryManager = new MemoryManager(db);
 
     // Pre-populate memory for the anonymous user
@@ -193,8 +189,7 @@ describe("chatRouter", () => {
     const app = new Hono();
     chatRouter(app, provider, {
       sessionManager,
-      eventBus,
-      webChatAdapter,
+      eventLog,
       memoryManager,
     });
 
@@ -215,8 +210,7 @@ describe("chatRouter", () => {
   it("uses userId from Hono context for session creation", async () => {
     const db = createTestDb();
     const sessionManager = new SessionManager(db);
-    const eventBus = new EventBus(db);
-    const webChatAdapter = new WebChatInputAdapter();
+    const eventLog = new EventLog(db);
 
     const provider = mockProvider([
       { type: "text", content: "hi" },
@@ -231,7 +225,7 @@ describe("chatRouter", () => {
       return next();
     });
 
-    chatRouter(app, provider, { sessionManager, eventBus, webChatAdapter });
+    chatRouter(app, provider, { sessionManager, eventLog });
 
     const res = await app.request("/api/chat", {
       method: "POST",
