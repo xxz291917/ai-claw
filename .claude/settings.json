@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(node -e:*)",
+      "Bash(node_modules/.bin/vitest:*)",
+      "Bash(node:*)",
+      "Read(//Users/xiaxuezhi/Documents/code/openclaw/**)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}
