@@ -1,83 +1,88 @@
 import type { Hono } from "hono";
-import type { TaskStore } from "../tasks/store.js";
-import type { EventBus } from "../core/event-bus.js";
-import type { SentryInputAdapter } from "../adapters/input/sentry.js";
-import type { LarkInputAdapter } from "../adapters/input/lark.js";
+import type Database from "better-sqlite3";
+import { z } from "zod";
+import { randomUUID } from "node:crypto";
+import type { EventLog } from "../core/event-bus.js";
+import { createHubEvent } from "../core/hub-event.js";
 
-type WebhookRoutesDeps = {
-  store: TaskStore;
-  eventBus: EventBus;
-  sentryAdapter: SentryInputAdapter;
-  larkAdapter: LarkInputAdapter;
+type AgentRunner = (prompt: string) => Promise<{ text: string; error?: string }>;
+
+type WebhookDeps = {
+  db: Database.Database;
+  eventLog: EventLog;
+  runFaultHealing: AgentRunner;
 };
 
-/**
- * Register EventBus-integrated webhook routes.
- *
- * Replaces the legacy sentryWebhook() and larkCallback() route registrations.
- * Each route uses the appropriate InputAdapter to validate and convert the
- * raw payload into a HubEvent, then emits it to the EventBus for processing
- * by Core → RuleRouter → Executor → SubAgent.
- */
-export function registerWebhookRoutes(app: Hono, deps: WebhookRoutesDeps): void {
-  const { store, eventBus, sentryAdapter, larkAdapter } = deps;
+const sentryPayloadSchema = z.object({
+  action: z.string(),
+  data: z.object({
+    issue: z.object({
+      id: z.string(),
+      title: z.string(),
+      level: z.string(),
+    }),
+    event: z.object({ event_id: z.string() }).optional(),
+  }),
+});
 
-  // --- Sentry webhook: validate → dedup → create task → emit event ---
+function mapSeverity(level: string): string {
+  switch (level) {
+    case "fatal": return "P0";
+    case "error": return "P1";
+    case "warning": return "P2";
+    default: return "P3";
+  }
+}
+
+export function registerWebhookRoutes(app: Hono, deps: WebhookDeps): void {
+  const { db, eventLog, runFaultHealing } = deps;
+
   app.post("/webhooks/sentry", async (c) => {
-    const raw = await c.req.json();
-    const event = sentryAdapter.toEvent(raw);
-    if (!event) return c.json({ error: "Invalid payload" }, 400);
+    const parsed = sentryPayloadSchema.safeParse(await c.req.json());
+    if (!parsed.success) return c.json({ error: "Invalid payload" }, 400);
 
-    const issueId = event.payload.issueId as string;
+    const { data } = parsed.data;
+    const issueId = data.issue.id;
 
-    // Dedup: skip if an active task already exists for this issue
-    const existing = store.findByIssueId(issueId);
-    if (existing && !["done", "failed", "ignored", "rejected"].includes(existing.state)) {
+    // Dedup: skip if a running task already exists for this issue
+    const existing = db
+      .prepare("SELECT id FROM tasks WHERE sentry_issue_id = ? AND status = 'running' LIMIT 1")
+      .get(issueId) as { id: string } | undefined;
+    if (existing) {
       return c.json({ status: "duplicate", taskId: existing.id });
     }
 
-    // Create task before emitting (task must exist for FK constraints in audit_log)
-    const task = store.create({
-      sentryIssueId: issueId,
-      sentryEventId: (event.payload.eventId as string) ?? "",
-      title: event.payload.title as string,
-      severity: event.payload.severity as string,
-    });
+    // Create minimal task record
+    const taskId = randomUUID();
+    const severity = mapSeverity(data.issue.level);
+    db.prepare(
+      "INSERT INTO tasks (id, sentry_issue_id, title, severity, status) VALUES (?, ?, ?, ?, 'running')",
+    ).run(taskId, issueId, data.issue.title, severity);
 
-    // Enrich event with taskId so the agent can look up the task
-    event.payload.taskId = task.id;
+    // Audit log
+    eventLog.log(createHubEvent({
+      type: "sentry.issue_alert",
+      source: "sentry",
+      payload: { issueId, title: data.issue.title, severity, taskId },
+    }));
 
-    // Fire-and-forget: EventBus → Core → Executor → FaultHealingAgent
-    eventBus.emit(event).catch((err) => {
-      console.error(`[webhook] Failed to process sentry event:`, err);
-    });
+    // Fire-and-forget: agent handles everything
+    const prompt = `Sentry issue #${issueId}: "${data.issue.title}" (${severity}).
+Analyze and fix this issue. Use sentry_query, read source code, create a fix, run tests, and submit a PR.`;
 
-    return c.json({ status: "accepted", taskId: task.id });
-  });
+    runFaultHealing(prompt)
+      .then((result) => {
+        const status = result.error ? "failed" : "done";
+        const error = result.error ?? null;
+        db.prepare("UPDATE tasks SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(status, error, taskId);
+      })
+      .catch((err) => {
+        console.error(`[fault-healing] Agent failed for task ${taskId}:`, err);
+        db.prepare("UPDATE tasks SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(String(err), taskId);
+      });
 
-  // --- Lark callback: challenge → validate → emit event ---
-  app.post("/callbacks/lark", async (c) => {
-    const raw = await c.req.json();
-
-    // Lark card callback verification challenge
-    if (raw.challenge) {
-      return c.json({ challenge: raw.challenge });
-    }
-
-    const event = larkAdapter.toEvent(raw);
-    if (!event) return c.json({ msg: "ok" });
-
-    // For card actions, verify the task exists
-    if (event.type === "lark.card_action" && event.payload.taskId) {
-      const task = store.getById(event.payload.taskId as string);
-      if (!task) return c.json({ msg: "task not found" });
-    }
-
-    // Fire-and-forget: EventBus → Core → Executor → FaultHealingAgent
-    eventBus.emit(event).catch((err) => {
-      console.error(`[webhook] Failed to process lark event:`, err);
-    });
-
-    return c.json({ msg: "ok" });
+    return c.json({ status: "accepted", taskId });
   });
 }

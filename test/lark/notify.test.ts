@@ -1,55 +1,43 @@
 import { describe, it, expect } from "vitest";
-import {
-  buildDiagnosisCard,
-  buildPrReadyCard,
-} from "../../src/lark/notify.js";
+import { buildNotificationCard } from "../../src/lark/notify.js";
 
-describe("Lark card builders", () => {
-  it("builds diagnosis card with correct structure", () => {
-    const card = buildDiagnosisCard({
-      taskId: "task-1",
-      title: "TypeError at handler.ts:42",
+describe("buildNotificationCard", () => {
+  it("builds card with correct header and body", () => {
+    const card = buildNotificationCard({
+      title: "Sentry issue detected",
       severity: "P1",
-      rootCause: "Null reference in user lookup",
-      confidence: "92%",
-      impact: "1.2k users",
+      body: "**Error:** TypeError at handler.ts:42",
     });
 
     expect(card.header.title.content).toContain("P1");
-    const actions = card.elements.find((e: any) => e.tag === "action");
-    expect(actions).toBeDefined();
+    expect(card.header.template).toBe("red");
+    expect(card.elements[0].text.content).toContain("TypeError");
   });
 
-  it("builds PR ready card with correct structure", () => {
-    const card = buildPrReadyCard({
-      taskId: "task-2",
-      prUrl: "https://github.com/org/repo/pull/42",
-      prNumber: 42,
-      filesChanged: 3,
-      linesAdded: 12,
-      testsPassed: 8,
-      testsFailed: 0,
+  it("includes link button when linkUrl provided", () => {
+    const card = buildNotificationCard({
+      title: "PR created",
+      severity: "P2",
+      body: "Fix submitted",
+      linkUrl: "https://github.com/org/repo/pull/42",
+      linkLabel: "View PR",
     });
 
-    expect(card.header.title.content).toContain("PR");
+    expect(card.header.template).toBe("orange");
     const actions = card.elements.find((e: any) => e.tag === "action");
     expect(actions).toBeDefined();
+    expect(actions.actions[0].url).toBe("https://github.com/org/repo/pull/42");
+    expect(actions.actions[0].text.content).toBe("View PR");
   });
 
-  it("shows CI failure when tests fail", () => {
-    const card = buildPrReadyCard({
-      taskId: "task-3",
-      prUrl: "https://github.com/org/repo/pull/43",
-      prNumber: 43,
-      filesChanged: 1,
-      linesAdded: 5,
-      testsPassed: 7,
-      testsFailed: 2,
+  it("omits action section when no linkUrl", () => {
+    const card = buildNotificationCard({
+      title: "Info",
+      severity: "P3",
+      body: "Just a notification",
     });
 
-    const testElement = card.elements.find(
-      (e: any) => e.text?.content?.includes("失败"),
-    );
-    expect(testElement).toBeDefined();
+    const actions = card.elements.find((e: any) => e.tag === "action");
+    expect(actions).toBeUndefined();
   });
 });
