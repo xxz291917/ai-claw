@@ -21,7 +21,24 @@ export function initDb(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_tasks_sentry_issue
       ON tasks(sentry_issue_id);
+  `);
 
+  // Migrate old schema: rename 'state' → 'status', drop removed columns
+  const cols = db.pragma("table_info(tasks)") as Array<{ name: string }>;
+  const colNames = cols.map((c) => c.name);
+  if (colNames.includes("state") && !colNames.includes("status")) {
+    db.exec("ALTER TABLE tasks RENAME COLUMN state TO status");
+  }
+  // Drop columns that no longer exist (SQLite 3.35+)
+  for (const old of ["type", "sentry_event_id", "analysis", "lark_message_id"]) {
+    if (colNames.includes(old)) {
+      db.exec(`ALTER TABLE tasks DROP COLUMN ${old}`);
+    }
+  }
+  // Drop old index if it exists
+  db.exec("DROP INDEX IF EXISTS idx_tasks_state");
+
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_status
       ON tasks(status);
 
