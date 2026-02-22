@@ -84,7 +84,12 @@ export function createApp(): {
 
   // --- Chat Assistant (reuses shared tool suite) ---
   const { provider: chatProvider } = setupChatProvider(env, skillsDir, toolSuite);
-  chatRouter(app, chatProvider, { sessionManager, eventLog, memoryManager });
+  chatRouter(app, chatProvider, {
+    sessionManager,
+    eventLog,
+    memoryManager,
+    maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
+  });
 
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));

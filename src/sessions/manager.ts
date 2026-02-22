@@ -92,6 +92,30 @@ export class SessionManager {
       .run(sessionId);
   }
 
+  /**
+   * Replace all messages for a session with a new set.
+   * Used after history compaction to persist the compacted version,
+   * avoiding repeated summarization on subsequent requests.
+   */
+  replaceMessages(
+    sessionId: string,
+    messages: Array<{ role: "user" | "assistant" | "system"; content: string }>,
+  ): void {
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare("DELETE FROM messages WHERE session_id = ?")
+        .run(sessionId);
+
+      const insert = this.db.prepare(
+        `INSERT INTO messages (id, session_id, role, content) VALUES (?, ?, ?, ?)`,
+      );
+      for (const m of messages) {
+        insert.run(randomUUID(), sessionId, m.role, m.content);
+      }
+    });
+    txn();
+  }
+
   countMessages(sessionId: string): number {
     const row = this.db
       .prepare("SELECT COUNT(*) as count FROM messages WHERE session_id = ?")

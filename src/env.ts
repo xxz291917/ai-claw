@@ -35,6 +35,8 @@ const envSchema = z.object({
   CHAT_MAX_TOOL_RESULT_CHARS: z.coerce.number().default(4000),
   CHAT_MAX_CONTEXT_TOKENS: z.coerce.number().default(60000),
   CHAT_FETCH_TIMEOUT: z.coerce.number().default(120),
+  /** Max estimated tokens before triggering history compaction. 0 = disabled (message count only). */
+  CHAT_MAX_HISTORY_TOKENS: z.coerce.number().default(0),
 });
 
 export type Env = z.infer<typeof envSchema>;

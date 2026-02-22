@@ -14,6 +14,8 @@ type ChatRouterDeps = {
   sessionManager: SessionManager;
   eventLog: EventLog;
   maxHistoryMessages?: number;
+  /** Max estimated tokens before triggering compaction. 0 = disabled. */
+  maxHistoryTokens?: number;
   memoryManager?: MemoryManager;
 };
 
@@ -49,8 +51,10 @@ export function chatRouter(
 ): void {
   const { sessionManager, eventLog, memoryManager } = deps;
   const maxHistoryMessages = deps.maxHistoryMessages ?? 40;
+  const maxHistoryTokens = deps.maxHistoryTokens ?? 0;
 
   app.post("/api/chat", async (c) => {
+    const t0 = Date.now();
     const body = await c.req.json().catch(() => ({}));
     const message = body.message;
     const sessionId: string | undefined = body.sessionId;
@@ -58,6 +62,8 @@ export function chatRouter(
     if (!message || typeof message !== "string") {
       return c.json({ error: "message is required" }, 400);
     }
+
+    console.log(`[chat] ← message="${message.slice(0, 80)}" sessionId=${sessionId ?? "(new)"}`);
 
     // 1. Resolve or create session
     const userId = c.get("userId") ?? "web-anonymous";
@@ -69,6 +75,9 @@ export function chatRouter(
         channelId: "",
         provider: provider.name,
       });
+      console.log(`[chat] new session ${session.id} for user=${userId}`);
+    } else {
+      console.log(`[chat] reuse session ${session.id} user=${userId}`);
     }
 
     // 2. Handle slash commands (before LLM call)
@@ -102,10 +111,13 @@ export function chatRouter(
         content: m.content,
       }));
 
+      console.log(`[chat] history: ${rawHistory.length} messages`);
+
       // 5a. Inject relevant memories
       if (memoryManager) {
         try {
           const memories = memoryManager.search(session.userId, message);
+          console.log(`[chat] memory search: ${memories.length} results`);
           if (memories.length > 0) {
             const memoryText = memories
               .map((m) => `- [${m.category}] ${m.key}: ${m.value}`)
@@ -137,9 +149,18 @@ export function chatRouter(
 
       const history = await compactHistory(rawHistory, {
         maxMessages: maxHistoryMessages,
+        maxTokens: maxHistoryTokens,
         summarize: provider.summarize?.bind(provider),
         memoryFlush,
       });
+
+      // Persist compacted history so subsequent requests don't re-summarize
+      if (history.length < rawHistory.length) {
+        console.log(`[chat] compacted ${rawHistory.length} → ${history.length} messages, persisting (${Date.now() - t0}ms)`);
+        sessionManager.replaceMessages(session.id, history);
+      } else {
+        console.log(`[chat] history: ${history.length} messages, no compaction needed (${Date.now() - t0}ms)`);
+      }
 
       return streamSSE(c, async (stream) => {
         let assistantText = "";
@@ -155,6 +176,7 @@ export function chatRouter(
 
         try {
           // 6. Stream from provider
+          console.log(`[chat] → provider.stream() provider=${provider.name} (${Date.now() - t0}ms)`);
           for await (const event of provider.stream({
             message,
             sessionId: session.providerSessionId ?? undefined,
@@ -165,7 +187,16 @@ export function chatRouter(
               assistantText += event.content;
             }
 
+            if (event.type === "tool_use") {
+              console.log(`[chat]   tool_use: ${(event as any).tool} (${Date.now() - t0}ms)`);
+            }
+            if (event.type === "tool_result") {
+              const output = (event as any).output ?? "";
+              console.log(`[chat]   tool_result: ${(event as any).tool} (${output.length} chars, ${Date.now() - t0}ms)`);
+            }
+
             if (event.type === "done") {
+              console.log(`[chat] ✓ done (${Date.now() - t0}ms) cost=$${(event as any).costUsd ?? 0} text=${assistantText.length} chars`);
               // 7. Record assistant reply
               if (assistantText) {
                 sessionManager.appendMessage(session.id, {

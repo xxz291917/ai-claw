@@ -1,4 +1,5 @@
 import type { ChatProvider, ChatEvent, ChatRequest } from "./types.js";
+import { estimateStringTokens } from "./token-utils.js";
 
 export type ToolDef = {
   name: string;
@@ -91,6 +92,7 @@ export class GenericProvider implements ChatProvider {
   }
 
   async *stream(req: ChatRequest): AsyncIterable<ChatEvent> {
+    const t0 = Date.now();
     const maxTurns = this.config.maxTurns ?? 10;
 
     const messages: Message[] = [];
@@ -103,6 +105,7 @@ export class GenericProvider implements ChatProvider {
       }
     }
     messages.push({ role: "user", content: req.message });
+    console.log(`[generic] stream start — model=${this.config.model} messages=${messages.length} tokens≈${estimateTokens(messages)}`);
 
     const toolMap = new Map(
       (this.config.tools ?? []).map((t) => [t.name, t]),
@@ -119,6 +122,8 @@ export class GenericProvider implements ChatProvider {
       })) ?? [];
 
     for (let turn = 0; turn < maxTurns; turn++) {
+      console.log(`[generic] turn ${turn + 1}/${maxTurns} — messages=${messages.length} (${Date.now() - t0}ms)`);
+
       const body: Record<string, unknown> = {
         model: this.config.model,
         messages,
@@ -219,9 +224,11 @@ export class GenericProvider implements ChatProvider {
       }
 
       if (toolCalls.length === 0) {
+        console.log(`[generic] no tool calls — done (${Date.now() - t0}ms)`);
         yield { type: "done", sessionId: "", costUsd: 0 };
         return;
       }
+      console.log(`[generic] ${toolCalls.filter(Boolean).length} tool calls: ${toolCalls.filter(Boolean).map(tc => tc.function.name).join(", ")} (${Date.now() - t0}ms)`);
 
       messages.push({
         role: "assistant",
@@ -242,6 +249,7 @@ export class GenericProvider implements ChatProvider {
 
         const handler = toolMap.get(tc.function.name);
         let result: string;
+        const toolStart = Date.now();
         if (handler) {
           try {
             result = await handler.handler(args);
@@ -251,6 +259,7 @@ export class GenericProvider implements ChatProvider {
         } else {
           result = `Unknown tool: ${tc.function.name}`;
         }
+        console.log(`[generic]   tool ${tc.function.name}: ${result.length} chars (${Date.now() - toolStart}ms)`);
 
         // Truncate large tool results
         result = truncateToolResult(result, this.maxToolResultChars);
@@ -371,24 +380,7 @@ export function estimateTokens(messages: Message[]): number {
   return total;
 }
 
-function estimateStringTokens(s: string): number {
-  let tokens = 0;
-  for (const ch of s) {
-    // CJK Unified Ideographs + common CJK ranges
-    const code = ch.codePointAt(0)!;
-    if (
-      (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified
-      (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
-      (code >= 0x3000 && code <= 0x303f) || // CJK Punctuation
-      (code >= 0xff00 && code <= 0xffef)    // Fullwidth Forms
-    ) {
-      tokens += 1;
-    } else {
-      tokens += 0.25; // ~4 ASCII chars per token
-    }
-  }
-  return Math.ceil(tokens);
-}
+// estimateStringTokens imported from ./token-utils.js
 
 /**
  * Compact older tool messages to free up context space.
