@@ -36,7 +36,38 @@ Sentry ─→ Sentry Trigger      │              │  POST /api/agent     │
         └──────────────────────┘
 ```
 
-## Agent API 设计
+## Provider 双模式设计
+
+`ChatProvider` 接口新增 `run()` 方法，`stream()` 给 Chat（人用），`run()` 给 Agent API（机器用）：
+
+```typescript
+interface ChatProvider {
+  name: string;
+  stream(req: ChatRequest): AsyncIterable<ChatEvent>;  // Chat SSE 用
+  run?(req: ChatRequest): Promise<AgentResult>;         // Agent API 用
+}
+```
+
+两个 Provider 各自实现最优方式：
+
+| Provider | `stream()` | `run()` |
+|----------|-----------|---------|
+| ClaudeProvider | `query()` + yield 流事件 | `query()` 收集最终结果（真正 batch 模式） |
+| GenericProvider | OpenAI streaming + yield | 内部消费 `stream()` 收集结果返回 |
+
+Agent API 端点调用 `provider.run()`：
+
+```typescript
+app.post("/api/agent", async (c) => {
+  const { prompt, skill } = await c.req.json();
+  const result = await provider.run({ message: prompt, history: [] });
+  return c.json(result);
+});
+```
+
+`CHAT_PROVIDER=generic` 时 Agent API 自动走 GenericProvider（如 DeepSeek），无需额外配置。
+
+## Agent API 端点设计
 
 ### `POST /api/agent`
 
@@ -139,6 +170,9 @@ CREATE INDEX idx_agent_runs_status ON agent_runs(status);
 
 | 文件 | 变化 |
 |------|------|
+| `src/chat/types.ts` | `ChatProvider` 接口新增 `run?()` 方法 |
+| `src/chat/claude-provider.ts` | 新增 `run()` — batch 模式（复用 `runAgent()` 逻辑） |
+| `src/chat/generic-provider.ts` | 新增 `run()` — 内部消费 `stream()` 收集结果 |
 | `src/server.ts` | 移除 fault-healing 初始化块 (L58-82)，注册 agent routes |
 | `src/db.ts` | `tasks` 表 → `agent_runs` 表，删除旧迁移代码 |
 
@@ -150,7 +184,7 @@ CREATE INDEX idx_agent_runs_status ON agent_runs(status);
 | `src/chat/*` | Chat 助手全部不变 |
 | `src/tools/*` | 全部工具不变，n8n 通过 Agent API 间接使用 |
 | `src/skills/*` (除 fault-healing.md) | 通用 skill 保留 |
-| `src/agent/runner.ts` | Agent 执行引擎不变，agent route 内部调用 |
+| `src/agent/runner.ts` | Agent 执行引擎不变，ClaudeProvider.run() 内部调用 |
 | `src/core/*` | EventLog 审计不变 |
 | `src/sessions/*`, `src/memory/*` | 会话和记忆不变 |
 
