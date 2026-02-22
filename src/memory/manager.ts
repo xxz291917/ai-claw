@@ -52,7 +52,7 @@ export class MemoryManager {
       .trim()
       .split(/\s+/)
       .filter(Boolean)
-      .map((t) => `"${t}"*`)
+      .map((t) => `"${t.replace(/"/g, '""')}"*`)
       .join(" OR ");
 
     if (!ftsQuery) return [];

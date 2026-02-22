@@ -14,6 +14,7 @@ export type ChatRequest = {
   message: string;
   sessionId?: string;
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  abortSignal?: AbortSignal;
 };
 
 export interface ChatProvider {

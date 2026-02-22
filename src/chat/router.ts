@@ -18,21 +18,26 @@ type ChatRouterDeps = {
 };
 
 // Per-session concurrency lock — same session requests queue, cross-session parallel
-const sessionLocks = new Map<string, Promise<void>>();
+const sessionLocks = new Map<string, { promise: Promise<void>; count: number }>();
 
 function withSessionLock<T>(
   sessionId: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const prev = sessionLocks.get(sessionId) ?? Promise.resolve();
+  const entry = sessionLocks.get(sessionId);
+  const prev = entry?.promise ?? Promise.resolve();
+  const count = (entry?.count ?? 0) + 1;
   let unlock: () => void;
   const next = new Promise<void>((r) => (unlock = r));
-  sessionLocks.set(sessionId, next);
+  sessionLocks.set(sessionId, { promise: next, count });
   return prev.then(() => fn()).finally(() => {
     unlock();
-    // Clean up if no more pending work
-    if (sessionLocks.get(sessionId) === next) {
-      sessionLocks.delete(sessionId);
+    const current = sessionLocks.get(sessionId);
+    if (current) {
+      current.count--;
+      if (current.count <= 0) {
+        sessionLocks.delete(sessionId);
+      }
     }
   });
 }
@@ -154,6 +159,7 @@ export function chatRouter(
             message,
             sessionId: session.providerSessionId ?? undefined,
             history,
+            abortSignal: c.req.raw.signal,
           })) {
             if (event.type === "text") {
               assistantText += event.content;

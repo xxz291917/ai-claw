@@ -13,6 +13,7 @@ import { createWebSearchTool } from "./web-search.js";
 import { createWebFetchTool } from "./web-fetch.js";
 import { createBashExecTool } from "./bash-exec.js";
 import { createClaudeCodeTool } from "./claude-code.js";
+import { createFileTools } from "./file-tools.js";
 import type { ToolDef } from "../chat/generic-provider.js";
 import type { UnifiedToolDef } from "./types.js";
 
@@ -48,6 +49,7 @@ export function buildToolSuite(
     createSkillReaderTool(skillsDir),
     createWebFetchTool({ firecrawlApiKey: env.FIRECRAWL_API_KEY }),
     createClaudeCodeTool({ workspaceDir: env.WORKSPACE_DIR }),
+    ...createFileTools({ workspaceDir: env.WORKSPACE_DIR }),
   ];
 
   if (env.SENTRY_AUTH_TOKEN && env.SENTRY_ORG && env.SENTRY_PROJECT) {

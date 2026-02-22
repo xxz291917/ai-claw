@@ -76,11 +76,15 @@ async function runCommand(
 ): Promise<string> {
   const { command } = args;
 
-  // Allowlist check
+  // Allowlist check — also reject shell metacharacters to prevent bypass
   if (allowedCommands) {
     const bin = command.trim().split(/\s/)[0];
     if (!allowedCommands.includes(bin)) {
       return `Error: Command "${bin}" is not allowed. Allowed: ${allowedCommands.join(", ")}`;
+    }
+    // Block shell metacharacters that could chain additional commands
+    if (/[;|&`$(){}<>]/.test(command)) {
+      return `Error: Shell metacharacters are not allowed when command allowlist is active.`;
     }
   }
 

@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import type Database from "better-sqlite3";
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 import type { EventLog } from "../core/event-bus.js";
 import { createHubEvent } from "../core/hub-event.js";
 
@@ -11,6 +11,7 @@ type WebhookDeps = {
   db: Database.Database;
   eventLog: EventLog;
   runFaultHealing: AgentRunner;
+  sentryWebhookSecret?: string;
 };
 
 const sentryPayloadSchema = z.object({
@@ -34,11 +35,34 @@ function mapSeverity(level: string): string {
   }
 }
 
+function verifySentrySignature(body: string, signature: string, secret: string): boolean {
+  const expected = createHmac("sha256", secret).update(body).digest("hex");
+  try {
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  } catch {
+    return false;
+  }
+}
+
 export function registerWebhookRoutes(app: Hono, deps: WebhookDeps): void {
-  const { db, eventLog, runFaultHealing } = deps;
+  const { db, eventLog, runFaultHealing, sentryWebhookSecret } = deps;
 
   app.post("/webhooks/sentry", async (c) => {
-    const parsed = sentryPayloadSchema.safeParse(await c.req.json());
+    // Always read raw body first (needed for both signature check and parsing)
+    const rawBody = await c.req.text();
+
+    // HMAC signature verification (if secret configured)
+    if (sentryWebhookSecret) {
+      const signature = c.req.header("sentry-hook-signature") ?? "";
+      if (!verifySentrySignature(rawBody, signature, sentryWebhookSecret)) {
+        return c.json({ error: "Invalid signature" }, 401);
+      }
+    }
+
+    let json: unknown;
+    try { json = JSON.parse(rawBody); } catch { return c.json({ error: "Invalid JSON" }, 400); }
+
+    const parsed = sentryPayloadSchema.safeParse(json);
     if (!parsed.success) return c.json({ error: "Invalid payload" }, 400);
 
     const { data } = parsed.data;

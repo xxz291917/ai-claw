@@ -20,7 +20,10 @@ describe("EventLog", () => {
     expect(row).toBeTruthy();
     expect(row.type).toBe("sentry.issue_alert");
     expect(row.source).toBe("sentry");
-    expect(JSON.parse(row.payload)).toEqual({ issue_id: "42" });
+    const payload = JSON.parse(row.payload);
+    expect(payload.issue_id).toBe("42");
+    expect(payload._metadata).toBeDefined();
+    expect(payload._metadata.receivedAt).toBeDefined();
     expect(JSON.parse(row.context)).toEqual({ userId: "u1" });
   });
 

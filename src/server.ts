@@ -67,6 +67,7 @@ export function createApp(): {
     registerWebhookRoutes(app, {
       db,
       eventLog,
+      sentryWebhookSecret: env.SENTRY_WEBHOOK_SECRET,
       runFaultHealing: (prompt) =>
         runAgent(prompt, {
           workspaceDir: env.WORKSPACE_DIR,
@@ -92,8 +93,8 @@ export function createApp(): {
 }
 
 export function startServer() {
-  const env = loadEnv();
   const { app } = createApp();
+  const env = loadEnv(); // singleton — already parsed by createApp()
 
   serve({ fetch: app.fetch, port: env.PORT }, (info) => {
     console.log(`

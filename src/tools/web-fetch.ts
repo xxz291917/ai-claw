@@ -86,6 +86,7 @@ async function fetchWithFirecrawl(
   url: string,
   apiKey: string,
 ): Promise<string> {
+  validateUrl(url);
   const res = await fetch(FIRECRAWL_ENDPOINT, {
     method: "POST",
     headers: {
@@ -96,6 +97,7 @@ async function fetchWithFirecrawl(
       url,
       formats: ["markdown"],
     }),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!res.ok) {
@@ -106,10 +108,37 @@ async function fetchWithFirecrawl(
   return data.data?.markdown ?? data.data?.content ?? "";
 }
 
+function validateUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid URL: ${url}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Only http/https URLs are allowed, got: ${parsed.protocol}`);
+  }
+  // Block common SSRF targets (cloud metadata, localhost, private ranges)
+  const host = parsed.hostname;
+  if (
+    host === "localhost" ||
+    host === "169.254.169.254" ||
+    host.startsWith("127.") ||
+    host.startsWith("10.") ||
+    host.startsWith("192.168.") ||
+    host === "0.0.0.0" ||
+    host === "[::1]"
+  ) {
+    throw new Error(`Access to internal/private addresses is blocked: ${host}`);
+  }
+}
+
 async function fetchDirect(url: string): Promise<string> {
+  validateUrl(url);
   const res = await fetch(url, {
     headers: { "User-Agent": DEFAULT_USER_AGENT },
     redirect: "follow",
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!res.ok) {

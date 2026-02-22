@@ -18,6 +18,11 @@ export class ClaudeProvider implements ChatProvider {
   async *stream(req: ChatRequest): AsyncIterable<ChatEvent> {
     const abortController = new AbortController();
 
+    // Abort SDK query when client disconnects
+    if (req.abortSignal) {
+      req.abortSignal.addEventListener("abort", () => abortController.abort(), { once: true });
+    }
+
     const q = query({
       prompt: req.message,
       options: {

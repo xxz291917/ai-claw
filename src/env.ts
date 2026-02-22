@@ -14,7 +14,7 @@ const envSchema = z.object({
   LARK_APP_SECRET: z.string().optional(),
   LARK_NOTIFY_CHAT_ID: z.string().optional(),
   GH_TOKEN: z.string().optional(),
-  GITHUB_REPO: z.string().optional(),
+  SENTRY_WEBHOOK_SECRET: z.string().optional(),
 
   // Web tools (optional)
   BRAVE_API_KEY: z.string().optional(),
@@ -35,16 +35,6 @@ const envSchema = z.object({
   CHAT_MAX_TOOL_RESULT_CHARS: z.coerce.number().default(4000),
   CHAT_MAX_CONTEXT_TOKENS: z.coerce.number().default(60000),
   CHAT_FETCH_TIMEOUT: z.coerce.number().default(120),
-  // Memory / Embedding (reserved for future use)
-  EMBEDDING_PROVIDER: z.enum(["none", "openai", "local"]).default("none"),
-  EMBEDDING_API_KEY: z.string().optional(),
-  EMBEDDING_MODEL: z.string().optional(),
-
-  CHAT_SYSTEM_PROMPT: z
-    .string()
-    .default(
-      "You are a helpful engineering assistant. You have access to code tools (bash, read, write, edit, grep, glob) and can help with any engineering task.",
-    ),
 });
 
 export type Env = z.infer<typeof envSchema>;

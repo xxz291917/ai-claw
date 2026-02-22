@@ -4,6 +4,8 @@
 
 AI Hub 采用 **Agent 自治** 模式：LLM Agent 通过 tools + skills 自主完成完整工作流，不依赖预定义状态机或编排层。系统只负责触发、审计和结果记录。
 
+复杂工作流编排（如 Sentry→分析→通知→修复→PR→CI/CD）计划迁移到 **n8n** 处理，AI Hub 通过 `POST /api/agent` 端点供 n8n 调用（尚未实现，见 `docs/plans/2026-02-22-agent-api-implementation.md`）。
+
 ## 目录结构
 
 ```
@@ -57,7 +59,7 @@ Fault Healing 和 Chat 都依赖此引擎，区别在于调用模式：
 | `web-fetch.ts` | HTTP 抓取 + HTML→Markdown 转换（Firecrawl 或内置），15分钟缓存 |
 | `web-search.ts` | Brave Search API 搜索 |
 | `claude-code.ts` | 委托任务给 Claude Code CLI（子 Agent 模式） |
-| `file-tools.ts` | 文件读写，`safePath()` 沙箱校验防止路径逃逸 |
+| `file-tools.ts` | `file_read` + `file_write`，`safePath()` 沙箱校验防止路径逃逸 |
 | `skill-reader.ts` | `get_skill` 工具 — 按需加载技能完整内容 |
 
 ### 工具共享架构
