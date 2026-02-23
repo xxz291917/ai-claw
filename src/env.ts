@@ -25,6 +25,9 @@ const envSchema = z.object({
   BASH_EXEC_MAX_TIMEOUT: z.coerce.number().default(600),
   BASH_EXEC_ALLOWED_COMMANDS: z.string().optional(),
 
+  // Skills (extra directories for ClawHub-installed skills, comma-separated)
+  SKILLS_EXTRA_DIRS: z.string().default("skills_extra"),
+
   // Chat assistant
   CHAT_PROVIDER: z.enum(["claude", "generic"]).default("claude"),
   CHAT_MODEL: z.string().optional(),

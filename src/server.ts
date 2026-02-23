@@ -39,12 +39,20 @@ export function createApp(): {
   // Health check
   app.get("/health", (c) => c.json({ status: "ok", timestamp: Date.now() }));
 
+  // --- Skills Directories (builtin + extra) ---
+  const skillsDirs = [
+    resolve(__dirname, "skills"),
+    ...env.SKILLS_EXTRA_DIRS.split(",")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .map((d) => resolve(d)),
+  ];
+
   // --- Tool Suite ---
-  const skillsDir = resolve(__dirname, "skills");
-  const toolSuite = buildToolSuite(env, skillsDir);
+  const toolSuite = buildToolSuite(env, skillsDirs);
 
   // --- Chat Assistant ---
-  const { provider: chatProvider } = setupChatProvider(env, skillsDir, toolSuite);
+  const { provider: chatProvider } = setupChatProvider(env, skillsDirs, toolSuite);
   chatRouter(app, chatProvider, {
     sessionManager,
     eventLog,

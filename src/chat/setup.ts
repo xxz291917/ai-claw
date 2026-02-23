@@ -29,10 +29,10 @@ export type ChatSetupResult = {
 
 export function setupChatProvider(
   env: ChatSetupEnv,
-  skillsDir: string,
+  skillsDirs: string[],
   existingSuite?: ToolSuiteResult,
 ): ChatSetupResult {
-  const suite = existingSuite ?? buildToolSuite(env, skillsDir);
+  const suite = existingSuite ?? buildToolSuite(env, skillsDirs);
 
   // --- Create provider ---
   const isGeneric = env.CHAT_PROVIDER === "generic" && !!env.CHAT_API_BASE && !!env.CHAT_API_KEY;
@@ -43,7 +43,7 @@ export function setupChatProvider(
   // in text (fake XML tags) instead of using the function calling API properly.
   const systemPrompt = buildSystemPrompt({
     workspaceDir: env.WORKSPACE_DIR,
-    skillsDir,
+    skillsDirs,
     tools: isGeneric ? undefined : suite.descriptions,
   });
 

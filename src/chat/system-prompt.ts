@@ -14,13 +14,13 @@
  * Per-tool guidelines are in each tool's description field.
  */
 
-import { readFileSync, readdirSync } from "node:fs";
-import { resolve, basename } from "node:path";
-import { parseSkillFrontmatter } from "../skills/frontmatter.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { scanSkillDirs } from "../skills/loader.js";
 
 export type PromptContext = {
   workspaceDir: string;
-  skillsDir: string;
+  skillsDirs: string[];
   claudeMdPath?: string;
   tools?: string[];
 };
@@ -78,10 +78,13 @@ Put internal reasoning inside \`<think>...</think>\` tags. Only text outside is 
 - Use markdown formatting. Show command output in fenced code blocks.`);
 
   // --- 5. Skills (mandatory selection flow) ---
-  const skills = loadSkills(ctx.skillsDir);
+  const skills = scanSkillDirs(ctx.skillsDirs);
   if (skills.length > 0) {
     const skillList = skills
-      .map((s) => `- **${s.name}**: ${s.summary}`)
+      .map((s) => {
+        const tagStr = s.tags?.length ? ` [${s.tags.join(", ")}]` : "";
+        return `- **${s.name}**: ${s.description}${tagStr}`;
+      })
       .join("\n");
     sections.push(`## Skills (mandatory)
 
@@ -112,42 +115,6 @@ ${toolList}`);
   }
 
   return sections.join("\n\n---\n\n");
-}
-
-type SkillEntry = { name: string; summary: string };
-
-function loadSkills(skillsDir: string): SkillEntry[] {
-  let files: string[];
-  try {
-    files = readdirSync(skillsDir).filter((f) => f.endsWith(".md"));
-  } catch {
-    return [];
-  }
-
-  return files.map((file) => {
-    const content = tryReadFile(resolve(skillsDir, file)) ?? "";
-    const { metadata, body } = parseSkillFrontmatter(content);
-
-    // Use frontmatter description; fallback to first heading/line
-    const description =
-      metadata?.description ??
-      body
-        .split("\n")
-        .find((l) => l.trim().length > 0)
-        ?.replace(/^#+\s*/, "")
-        .trim() ??
-      file;
-
-    const tags = metadata?.tags;
-    const summary = tags?.length
-      ? `${description} [${tags.join(", ")}]`
-      : description;
-
-    return {
-      name: metadata?.name ?? basename(file, ".md"),
-      summary,
-    };
-  });
 }
 
 function tryReadFile(path: string): string | null {

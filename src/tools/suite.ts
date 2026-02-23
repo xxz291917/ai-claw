@@ -2,7 +2,7 @@
  * Shared tool suite builder — assembles unified tools, MCP server,
  * and prompt descriptions from environment config.
  *
- * Used by both Chat Assistant setup and Fault Healing pipeline.
+ * Used by Chat Assistant setup.
  */
 
 import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
@@ -43,10 +43,10 @@ export type ToolSuiteResult = {
  */
 export function buildToolSuite(
   env: ToolSuiteEnv,
-  skillsDir: string,
+  skillsDirs: string[],
 ): ToolSuiteResult {
   const toolDefs: UnifiedToolDef[] = [
-    createSkillReaderTool(skillsDir),
+    createSkillReaderTool(skillsDirs),
     createWebFetchTool({ firecrawlApiKey: env.FIRECRAWL_API_KEY }),
     createClaudeCodeTool({ workspaceDir: env.WORKSPACE_DIR }),
     ...createFileTools({ workspaceDir: env.WORKSPACE_DIR }),

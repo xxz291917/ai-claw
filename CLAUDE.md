@@ -77,6 +77,7 @@ npx vitest run test/tools/bash-exec.test.ts
 | `src/tools/skill-reader.ts` | `get_skill` tool — on-demand skill content loading |
 | **Skills** | |
 | `src/skills/*.md` | Markdown skills with YAML frontmatter (name, description, tags, allowed-tools) |
+| `src/skills/loader.ts` | `scanSkillDirs()` — multi-dir scanner, supports flat `*.md` + ClawHub `<name>/SKILL.md` format |
 | `src/skills/frontmatter.ts` | `parseSkillFrontmatter()` — parses skill YAML frontmatter |
 | **Sessions & Memory** | |
 | `src/sessions/manager.ts` | `SessionManager` — session CRUD, message append, provider session ID binding |

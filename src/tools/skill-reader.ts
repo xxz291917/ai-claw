@@ -1,7 +1,6 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { resolve, basename } from "node:path";
+import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { parseSkillFrontmatter } from "../skills/frontmatter.js";
+import { scanSkillDirs, type SkillEntry } from "../skills/loader.js";
 import type { UnifiedToolDef } from "./types.js";
 
 /**
@@ -10,9 +9,10 @@ import type { UnifiedToolDef } from "./types.js";
  * System prompt injects skill summaries; this tool provides the full text
  * when the LLM decides a skill matches the current task.
  */
-export function createSkillReaderTool(skillsDir: string): UnifiedToolDef {
-  // Pre-scan available skill names (with descriptions from frontmatter)
-  const available = listSkillSummaries(skillsDir);
+export function createSkillReaderTool(skillsDirs: string[]): UnifiedToolDef {
+  // Pre-scan available skills from all directories
+  const available = scanSkillDirs(skillsDirs);
+  const byName = new Map<string, SkillEntry>(available.map((s) => [s.name, s]));
 
   return {
     name: "get_skill",
@@ -23,53 +23,26 @@ export function createSkillReaderTool(skillsDir: string): UnifiedToolDef {
     inputSchema: {
       skill_name: z
         .string()
-        .describe("Skill name (without .md extension), e.g. 'fault-healing'"),
+        .describe("Skill name, e.g. 'github'"),
     },
     parameters: {
       type: "object",
       properties: {
-        skill_name: { type: "string", description: "Skill name (without .md extension)" },
+        skill_name: { type: "string", description: "Skill name" },
       },
       required: ["skill_name"],
     },
     execute: async (args: { skill_name: string }) => {
-      const filePath = resolve(skillsDir, `${args.skill_name}.md`);
-      try {
-        return readFileSync(filePath, "utf-8");
-      } catch {
-        const names = listSkillSummaries(skillsDir).map((s) => s.name);
-        return `Error: Skill "${args.skill_name}" not found. Available: ${names.join(", ") || "none"}`;
+      const entry = byName.get(args.skill_name);
+      if (entry) {
+        try {
+          return readFileSync(entry.filePath, "utf-8");
+        } catch {
+          // fall through to error
+        }
       }
+      const names = available.map((s) => s.name);
+      return `Error: Skill "${args.skill_name}" not found. Available: ${names.join(", ") || "none"}`;
     },
   };
-}
-
-type SkillSummary = { name: string; description: string };
-
-function listSkillSummaries(skillsDir: string): SkillSummary[] {
-  let files: string[];
-  try {
-    files = readdirSync(skillsDir).filter((f) => f.endsWith(".md"));
-  } catch {
-    return [];
-  }
-
-  return files.map((file) => {
-    const name = basename(file, ".md");
-    try {
-      const content = readFileSync(resolve(skillsDir, file), "utf-8");
-      const { metadata, body } = parseSkillFrontmatter(content);
-      const description =
-        metadata?.description ??
-        body
-          .split("\n")
-          .find((l) => l.trim().length > 0)
-          ?.replace(/^#+\s*/, "")
-          .trim() ??
-        name;
-      return { name, description };
-    } catch {
-      return { name, description: name };
-    }
-  });
 }

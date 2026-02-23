@@ -10,7 +10,7 @@ describe("buildSystemPrompt", () => {
   it("should include project knowledge from CLAUDE.md", () => {
     const prompt = buildSystemPrompt({
       workspaceDir: projectRoot,
-      skillsDir: resolve(projectRoot, "src/skills"),
+      skillsDirs: [resolve(projectRoot, "src/skills")],
     });
 
     expect(prompt).toContain("AI Hub Assistant");
@@ -20,7 +20,7 @@ describe("buildSystemPrompt", () => {
   it("should include skill summaries and get_skill guidance", () => {
     const prompt = buildSystemPrompt({
       workspaceDir: projectRoot,
-      skillsDir: resolve(projectRoot, "src/skills"),
+      skillsDirs: [resolve(projectRoot, "src/skills")],
     });
 
     expect(prompt).toContain("Skills (mandatory)");
@@ -31,7 +31,7 @@ describe("buildSystemPrompt", () => {
   it("should include custom tools when provided", () => {
     const prompt = buildSystemPrompt({
       workspaceDir: projectRoot,
-      skillsDir: resolve(projectRoot, "src/skills"),
+      skillsDirs: [resolve(projectRoot, "src/skills")],
       tools: ["`sentry_query(issue_id)` — Query Sentry"],
     });
 
@@ -42,7 +42,7 @@ describe("buildSystemPrompt", () => {
   it("should include runtime info in identity section", () => {
     const prompt = buildSystemPrompt({
       workspaceDir: "/tmp/test",
-      skillsDir: "/nonexistent",
+      skillsDirs: ["/nonexistent"],
     });
 
     expect(prompt).toContain("Workspace: /tmp/test");

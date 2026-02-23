@@ -4,11 +4,11 @@ import { fileURLToPath } from "node:url";
 import { buildToolSuite } from "../../src/tools/suite.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const skillsDir = resolve(__dirname, "../../src/skills");
+const skillsDirs = [resolve(__dirname, "../../src/skills")];
 
 describe("buildToolSuite", () => {
   it("includes base tools (get_skill, web_fetch, claude_code)", () => {
-    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDir);
+    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs);
 
     expect(result.mcpServers["ai-hub-tools"]).toBeDefined();
     expect(result.descriptions.length).toBeGreaterThanOrEqual(3);
@@ -25,7 +25,7 @@ describe("buildToolSuite", () => {
         SENTRY_ORG: "org",
         SENTRY_PROJECT: "proj",
       },
-      skillsDir,
+      skillsDirs,
     );
 
     expect(result.descriptions.some((d) => d.includes("sentry_query"))).toBe(true);
@@ -38,7 +38,7 @@ describe("buildToolSuite", () => {
         SENTRY_AUTH_TOKEN: "tok",
         // missing org and project
       },
-      skillsDir,
+      skillsDirs,
     );
 
     expect(result.descriptions.some((d) => d.includes("sentry_query"))).toBe(false);
@@ -47,14 +47,14 @@ describe("buildToolSuite", () => {
   it("includes web_search when BRAVE_API_KEY is set", () => {
     const result = buildToolSuite(
       { WORKSPACE_DIR: "/tmp/test", BRAVE_API_KEY: "key" },
-      skillsDir,
+      skillsDirs,
     );
 
     expect(result.descriptions.some((d) => d.includes("web_search"))).toBe(true);
   });
 
   it("omits web_search when BRAVE_API_KEY is missing", () => {
-    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDir);
+    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs);
 
     expect(result.descriptions.some((d) => d.includes("web_search"))).toBe(false);
   });
@@ -62,20 +62,20 @@ describe("buildToolSuite", () => {
   it("includes bash_exec when enabled", () => {
     const result = buildToolSuite(
       { WORKSPACE_DIR: "/tmp/test", BASH_EXEC_ENABLED: "true" },
-      skillsDir,
+      skillsDirs,
     );
 
     expect(result.descriptions.some((d) => d.includes("bash_exec"))).toBe(true);
   });
 
   it("omits bash_exec when not enabled", () => {
-    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDir);
+    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs);
 
     expect(result.descriptions.some((d) => d.includes("bash_exec"))).toBe(false);
   });
 
   it("returns genericTools matching descriptions count", () => {
-    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDir);
+    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs);
 
     expect(result.genericTools.length).toBe(result.descriptions.length);
   });
