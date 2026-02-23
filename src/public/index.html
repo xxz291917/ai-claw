@@ -73,16 +73,19 @@
     gap: 5px;
   }
   #new-chat-btn:hover { background: rgba(255,255,255,0.22); }
-  #messages {
+  #messages-wrapper {
     flex: 1;
     overflow-y: auto;
+  }
+  #messages {
+    max-width: var(--max-chat-width);
+    width: 100%;
+    margin: 0 auto;
     padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;
-    max-width: var(--max-chat-width);
-    width: 100%;
-    margin: 0 auto;
+    min-height: 100%;
   }
 
   /* --- Empty / Welcome state --- */
@@ -470,11 +473,13 @@
       <p id="token-error" style="color:#e53e3e;font-size:12px;margin-top:8px;display:none;"></p>
     </div>
   </div>
-  <div id="messages">
-    <div id="welcome">
-      <div class="welcome-icon">H</div>
-      <div class="welcome-title">Hi, how can I help?</div>
-      <div class="welcome-sub">Ask anything to get started</div>
+  <div id="messages-wrapper">
+    <div id="messages">
+      <div id="welcome">
+        <div class="welcome-icon">H</div>
+        <div class="welcome-title">Hi, how can I help?</div>
+        <div class="welcome-sub">Ask anything to get started</div>
+      </div>
     </div>
   </div>
   <div id="input-area">
@@ -554,6 +559,7 @@ function extractThinking(text) {
 }
 
 // --- DOM refs ---
+const scrollEl = document.getElementById("messages-wrapper");
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
@@ -600,7 +606,7 @@ function showReadingIndicator() {
     <div class="reading-dots"><span></span><span></span><span></span></div>
   `;
   messagesEl.appendChild(el);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollEl.scrollTop = scrollEl.scrollHeight;
   return el;
 }
 
@@ -788,28 +794,28 @@ async function send() {
 
           mdEl.innerHTML = renderMarkdown(cleaned);
           addCodeCopyButtons(mdEl);
-          messagesEl.scrollTop = messagesEl.scrollHeight;
+          scrollEl.scrollTop = scrollEl.scrollHeight;
 
         } else if (event.type === "tool_use") {
           showAssistant();
           const { card, id } = createToolCard(event.tool);
           currentToolCardId = id;
           toolCardsEl.appendChild(card);
-          messagesEl.scrollTop = messagesEl.scrollHeight;
+          scrollEl.scrollTop = scrollEl.scrollHeight;
 
         } else if (event.type === "tool_result") {
           if (currentToolCardId) {
             updateToolCard(currentToolCardId, event.tool, event.output);
             currentToolCardId = null;
           }
-          messagesEl.scrollTop = messagesEl.scrollHeight;
+          scrollEl.scrollTop = scrollEl.scrollHeight;
 
         } else if (event.type === "error") {
           showAssistant();
           fullText += "\n[Error: " + event.message + "]";
           const { thinking, cleaned } = extractThinking(fullText);
           mdEl.innerHTML = renderMarkdown(cleaned);
-          messagesEl.scrollTop = messagesEl.scrollHeight;
+          scrollEl.scrollTop = scrollEl.scrollHeight;
 
         } else if (event.type === "done") {
           sessionId = event.sessionId || sessionId;
@@ -865,7 +871,7 @@ function appendUserMsg(text) {
   el.className = "msg user";
   el.textContent = text;
   messagesEl.appendChild(el);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollEl.scrollTop = scrollEl.scrollHeight;
 }
 
 function createAssistantMsg() {
