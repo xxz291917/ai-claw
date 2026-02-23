@@ -1,5 +1,60 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createBashExecTool } from "../../src/tools/bash-exec.js";
+
+// Mock child_process to avoid spawning real shell processes
+// (prevents intermittent macOS printer dialogs from detached process groups)
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn((_shell: string, args: string[]) => {
+    const EventEmitter = require("node:events");
+    const { Readable } = require("node:stream");
+    const child = new EventEmitter();
+    child.stdout = new Readable({ read() {} });
+    child.stderr = new Readable({ read() {} });
+    child.pid = 99999;
+
+    const command = args?.[1] ?? "";
+
+    setTimeout(() => {
+      if (command === "false") {
+        child.stdout.push(null);
+        child.stderr.push(null);
+        child.emit("close", 1);
+      } else if (command === "sleep 10") {
+        // Don't close — let bash-exec's timeout handler fire
+      } else if (command === "echo partial-before-sleep && sleep 30") {
+        child.stdout.push(Buffer.from("partial-before-sleep\n"));
+        // Don't close — let timeout fire after partial output
+      } else if (command.includes("{1..200}")) {
+        child.stdout.push(Buffer.from("-".repeat(200)));
+        child.stdout.push(null);
+        child.stderr.push(null);
+        child.emit("close", 0);
+      } else if (command.includes("\\x00") || command.includes("\\x07")) {
+        child.stdout.push(Buffer.from("hello\x00world\x07end"));
+        child.stdout.push(null);
+        child.stderr.push(null);
+        child.emit("close", 0);
+      } else if (command.includes(">&2")) {
+        child.stderr.push(Buffer.from("err\n"));
+        child.stdout.push(null);
+        child.stderr.push(null);
+        child.emit("close", 0);
+      } else if (command.startsWith("echo")) {
+        const text = command.replace(/^echo\s+/, "");
+        child.stdout.push(Buffer.from(text + "\n"));
+        child.stdout.push(null);
+        child.stderr.push(null);
+        child.emit("close", 0);
+      } else {
+        child.stdout.push(null);
+        child.stderr.push(null);
+        child.emit("close", 0);
+      }
+    }, 10);
+
+    return child;
+  }),
+}));
 
 describe("createBashExecTool", () => {
   const defaultConfig = {
@@ -108,7 +163,6 @@ describe("createBashExecTool", () => {
       ...defaultConfig,
       defaultTimeoutMs: 1000,
     });
-    // Print some output then sleep — should capture the printed part
     const text = await tool.execute({
       command: "echo partial-before-sleep && sleep 30",
     });
@@ -120,7 +174,6 @@ describe("createBashExecTool", () => {
 
   it("should sanitize binary output", async () => {
     const tool = createBashExecTool(defaultConfig);
-    // printf with null byte and bell character
     const text = await tool.execute({
       command: "printf 'hello\\x00world\\x07end'",
     });

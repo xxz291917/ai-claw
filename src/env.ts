@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { resolve } from "node:path";
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
-  WORKSPACE_DIR: z.string().default("."),
+  WORKSPACE_DIR: z.string().default(".").transform((p) => resolve(p)),
 
   // Fault healing (optional — only needed for Sentry/Lark pipeline)
   ANTHROPIC_API_KEY: z.string().optional(),

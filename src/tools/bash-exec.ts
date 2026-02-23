@@ -150,7 +150,7 @@ function execStreaming(
   return new Promise((resolve) => {
     const child = spawn("/bin/sh", ["-c", command], {
       cwd: opts.cwd,
-      env: { ...process.env, TERM: "dumb" }, // Prevent terminal escape sequences (e.g. MC print trigger)
+      env: { ...process.env, TERM: "dumb", CUPS_SERVER: "" }, // Suppress terminal escape sequences and macOS printer dialogs
       stdio: ["ignore", "pipe", "pipe"],
       detached: true, // Create process group for clean kill
     });

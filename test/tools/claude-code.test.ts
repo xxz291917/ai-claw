@@ -1,5 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createClaudeCodeTool } from "../../src/tools/claude-code.js";
+
+// Mock child_process to avoid spawning real claude CLI
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn(() => {
+    const EventEmitter = require("node:events");
+    const { Readable } = require("node:stream");
+    const child = new EventEmitter();
+    child.stdout = new Readable({ read() {} });
+    child.stderr = new Readable({ read() {} });
+    child.pid = 99999;
+    // Simulate successful JSON output after short delay
+    setTimeout(() => {
+      child.stdout.push(
+        JSON.stringify({ result: "Task completed.", is_error: false, num_turns: 1, cost_usd: 0.001 }),
+      );
+      child.stdout.push(null);
+      child.stderr.push(null);
+      child.emit("close", 0);
+    }, 50);
+    return child;
+  }),
+}));
 
 describe("createClaudeCodeTool", () => {
   const defaultConfig = {
@@ -37,12 +59,11 @@ describe("createClaudeCodeTool", () => {
       defaultTimeoutMs: 5000,
     });
 
-    // This will either invoke claude CLI (if installed) or return an error
-    // Either way, execute should return a string
     const result = await tool.execute({ task: "echo test" });
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
-  }, 30000);
+    expect(result).toContain("Task completed");
+  });
 
   it("should handle non-existent workspace gracefully", async () => {
     const tool = createClaudeCodeTool({
@@ -51,8 +72,8 @@ describe("createClaudeCodeTool", () => {
       defaultTimeoutMs: 5000,
     });
 
-    // Should fall back to process.cwd() and still work
     const result = await tool.execute({ task: "echo fallback test" });
     expect(typeof result).toBe("string");
-  }, 30000);
+    expect(result).toContain("Task completed");
+  });
 });

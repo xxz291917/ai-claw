@@ -107,19 +107,27 @@ export class GenericProvider implements ChatProvider {
     messages.push({ role: "user", content: req.message });
     console.log(`[generic] stream start — model=${this.config.model} messages=${messages.length} tokens≈${estimateTokens(messages)}`);
 
-    const toolMap = new Map(
-      (this.config.tools ?? []).map((t) => [t.name, t]),
-    );
+    // Merge static tools with per-request tools (e.g. memory_save with userId baked in)
+    const allTools: ToolDef[] = [
+      ...(this.config.tools ?? []),
+      ...(req.requestTools ?? []).map((rt) => ({
+        name: rt.name,
+        description: rt.description,
+        parameters: rt.parameters,
+        handler: rt.handler,
+      })),
+    ];
 
-    const openaiTools =
-      this.config.tools?.map((t) => ({
-        type: "function" as const,
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: t.parameters,
-        },
-      })) ?? [];
+    const toolMap = new Map(allTools.map((t) => [t.name, t]));
+
+    const openaiTools = allTools.map((t) => ({
+      type: "function" as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      },
+    }));
 
     for (let turn = 0; turn < maxTurns; turn++) {
       console.log(`[generic] turn ${turn + 1}/${maxTurns} — messages=${messages.length} (${Date.now() - t0}ms)`);
@@ -131,6 +139,7 @@ export class GenericProvider implements ChatProvider {
       };
       if (openaiTools.length > 0) {
         body.tools = openaiTools;
+        body.parallel_tool_calls = true;
       }
 
       let res: Response;

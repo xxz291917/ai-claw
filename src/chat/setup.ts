@@ -34,19 +34,24 @@ export function setupChatProvider(
 ): ChatSetupResult {
   const suite = existingSuite ?? buildToolSuite(env, skillsDir);
 
-  // --- Build system prompt ---
+  // --- Create provider ---
+  const isGeneric = env.CHAT_PROVIDER === "generic" && !!env.CHAT_API_BASE && !!env.CHAT_API_KEY;
+
+  // GenericProvider gets structured tool definitions via the API `tools` parameter,
+  // so we OMIT tool descriptions from the system prompt to avoid duplication.
+  // Duplicate tool listings cause some models (e.g. DeepSeek) to "roleplay" tool calls
+  // in text (fake XML tags) instead of using the function calling API properly.
   const systemPrompt = buildSystemPrompt({
     workspaceDir: env.WORKSPACE_DIR,
     skillsDir,
-    tools: suite.descriptions,
+    tools: isGeneric ? undefined : suite.descriptions,
   });
 
-  // --- Create provider ---
   let provider: ChatProvider;
-  if (env.CHAT_PROVIDER === "generic" && env.CHAT_API_BASE && env.CHAT_API_KEY) {
+  if (isGeneric) {
     provider = new GenericProvider({
-      baseUrl: env.CHAT_API_BASE,
-      apiKey: env.CHAT_API_KEY,
+      baseUrl: env.CHAT_API_BASE!,
+      apiKey: env.CHAT_API_KEY!,
       model: env.CHAT_MODEL ?? "deepseek-chat",
       systemPrompt,
       tools: suite.genericTools,
