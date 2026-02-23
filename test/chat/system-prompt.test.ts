@@ -14,8 +14,7 @@ describe("buildSystemPrompt", () => {
     });
 
     expect(prompt).toContain("AI Hub Assistant");
-    expect(prompt).toContain("Fault Healing Pipeline");
-    expect(prompt).toContain("fault-healing");
+    expect(prompt).toContain("Chat Assistant");
   });
 
   it("should include skill summaries and get_skill guidance", () => {
@@ -25,7 +24,7 @@ describe("buildSystemPrompt", () => {
     });
 
     expect(prompt).toContain("Skills (mandatory)");
-    expect(prompt).toContain("fault-healing");
+    expect(prompt).toContain("github");
     expect(prompt).toContain("get_skill");
   });
 

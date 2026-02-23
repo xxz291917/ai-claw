@@ -5,17 +5,15 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
   WORKSPACE_DIR: z.string().default(".").transform((p) => resolve(p)),
 
-  // Fault healing (optional — only needed for Sentry/Lark pipeline)
+  // AI providers
   ANTHROPIC_API_KEY: z.string().optional(),
+  GH_TOKEN: z.string().optional(),
+
+  // Sentry tool (optional — enables sentry_query tool for Chat)
   SENTRY_BASE_URL: z.string().default("https://sentry.io"),
   SENTRY_AUTH_TOKEN: z.string().optional(),
   SENTRY_ORG: z.string().optional(),
   SENTRY_PROJECT: z.string().optional(),
-  LARK_APP_ID: z.string().optional(),
-  LARK_APP_SECRET: z.string().optional(),
-  LARK_NOTIFY_CHAT_ID: z.string().optional(),
-  GH_TOKEN: z.string().optional(),
-  SENTRY_WEBHOOK_SECRET: z.string().optional(),
 
   // Web tools (optional)
   BRAVE_API_KEY: z.string().optional(),

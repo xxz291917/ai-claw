@@ -10,10 +10,8 @@ describe("createSkillReaderTool", () => {
   const tool = createSkillReaderTool(skillsDir);
 
   it("should return full skill content for a valid skill name", async () => {
-    const text = await tool.execute({ skill_name: "fault-healing" });
-    expect(text).toContain("Fault Healing");
-    expect(text).toContain("Phase: Analysis");
-    expect(text).toContain("Phase: Fix");
+    const text = await tool.execute({ skill_name: "github" });
+    expect(text).toContain("GitHub");
     expect(text).not.toContain("Error:");
   });
 
@@ -21,10 +19,10 @@ describe("createSkillReaderTool", () => {
     const text = await tool.execute({ skill_name: "nonexistent" });
     expect(text).toContain("Error:");
     expect(text).toContain("not found");
-    expect(text).toContain("fault-healing");
+    expect(text).toContain("github");
   });
 
   it("should list available skills in description", () => {
-    expect(tool.description).toContain("fault-healing");
+    expect(tool.description).toContain("github");
   });
 });
