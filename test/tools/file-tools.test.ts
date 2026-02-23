@@ -15,6 +15,8 @@ import {
 } from "../../src/tools/file-tools.js";
 import type { UnifiedToolDef } from "../../src/tools/types.js";
 
+const ctx = { userId: "test", sessionId: "test" };
+
 let workspace: string;
 
 beforeEach(() => {
@@ -64,7 +66,7 @@ describe("file_read", () => {
   it("reads file with line numbers", async () => {
     writeFileSync(join(workspace, "hello.txt"), "line1\nline2\nline3\n");
 
-    const result = await fileRead.execute({ path: "hello.txt" });
+    const result = await fileRead.execute({ path: "hello.txt" }, ctx);
 
     expect(result).toContain("1| line1");
     expect(result).toContain("2| line2");
@@ -81,7 +83,7 @@ describe("file_read", () => {
       path: "ten.txt",
       offset: 2,
       limit: 3,
-    });
+    }, ctx);
 
     // offset=2 means skip first 2 lines, so we get lines 3, 4, 5
     expect(result).toContain("3| line-3");
@@ -93,12 +95,12 @@ describe("file_read", () => {
   });
 
   it("returns error for nonexistent file", async () => {
-    const result = await fileRead.execute({ path: "no-such-file.txt" });
+    const result = await fileRead.execute({ path: "no-such-file.txt" }, ctx);
     expect(result.toLowerCase()).toContain("error");
   });
 
   it("rejects path outside workspace", async () => {
-    const result = await fileRead.execute({ path: "../../etc/passwd" });
+    const result = await fileRead.execute({ path: "../../etc/passwd" }, ctx);
     expect(result).toContain("Path outside workspace");
   });
 
@@ -112,7 +114,7 @@ describe("file_read", () => {
       maxReadBytes: 100,
     });
     const smallRead = smallTools.find((t) => t.name === "file_read")!;
-    const result = await smallRead.execute({ path: "big.txt" });
+    const result = await smallRead.execute({ path: "big.txt" }, ctx);
 
     expect(result.length).toBeLessThanOrEqual(150); // 100 + truncation notice
     expect(result).toContain("truncated");
@@ -136,7 +138,7 @@ describe("file_write", () => {
     const result = await fileWrite.execute({
       path: "new-file.txt",
       content: "hello world",
-    });
+    }, ctx);
 
     expect(result).toContain("new-file.txt");
     const written = readFileSync(join(workspace, "new-file.txt"), "utf-8");
@@ -147,7 +149,7 @@ describe("file_write", () => {
     const result = await fileWrite.execute({
       path: "deep/nested/file.txt",
       content: "nested content",
-    });
+    }, ctx);
 
     expect(result).toContain("deep/nested/file.txt");
     expect(
@@ -166,7 +168,7 @@ describe("file_write", () => {
     await fileWrite.execute({
       path: "overwrite.txt",
       content: "new content",
-    });
+    }, ctx);
 
     const written = readFileSync(join(workspace, "overwrite.txt"), "utf-8");
     expect(written).toBe("new content");
@@ -176,7 +178,7 @@ describe("file_write", () => {
     const result = await fileWrite.execute({
       path: "../../etc/evil.txt",
       content: "bad",
-    });
+    }, ctx);
 
     expect(result).toContain("Path outside workspace");
   });

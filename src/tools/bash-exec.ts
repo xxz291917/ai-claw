@@ -60,7 +60,7 @@ export function createBashExecTool(config: BashExecConfig): UnifiedToolDef {
       },
       required: ["command"],
     },
-    execute: async (args: { command: string; timeout?: number; cwd?: string }) => {
+    execute: async (args: { command: string; timeout?: number; cwd?: string }, _ctx) => {
       return runCommand(args, resolvedDefaultCwd, defaultTimeout, maxTimeout, maxOutput, config.allowedCommands);
     },
   };

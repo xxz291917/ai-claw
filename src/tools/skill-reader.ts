@@ -33,7 +33,7 @@ export function createSkillReaderTool(skillsDirs: string[]): UnifiedToolDef {
       },
       required: ["skill_name"],
     },
-    execute: async (args: { skill_name: string }) => {
+    execute: async (args: { skill_name: string }, _ctx) => {
       // Re-scan on every call — picks up newly installed skills without restart
       const current = scanSkillDirs(skillsDirs);
       const byName = new Map<string, SkillEntry>(current.map((s) => [s.name, s]));

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createWebSearchTool } from "../../src/tools/web-search.js";
 
+const ctx = { userId: "test", sessionId: "test" };
+
 describe("createWebSearchTool", () => {
   const originalFetch = globalThis.fetch;
 
@@ -30,7 +32,7 @@ describe("createWebSearchTool", () => {
     }) as any;
 
     const tool = createWebSearchTool({ apiKey: "test-key" });
-    const text = await tool.execute({ query: "typescript", count: 2 });
+    const text = await tool.execute({ query: "typescript", count: 2 }, ctx);
 
     expect(text).toContain("TypeScript Docs");
     expect(text).toContain("https://typescriptlang.org");
@@ -53,7 +55,7 @@ describe("createWebSearchTool", () => {
     }) as any;
 
     const tool = createWebSearchTool({ apiKey: "test-key" });
-    const text = await tool.execute({ query: "test" });
+    const text = await tool.execute({ query: "test" }, ctx);
 
     expect(text).toContain("429");
   });
@@ -65,7 +67,7 @@ describe("createWebSearchTool", () => {
     }) as any;
 
     const tool = createWebSearchTool({ apiKey: "test-key" });
-    const text = await tool.execute({ query: "xyznonexistent" });
+    const text = await tool.execute({ query: "xyznonexistent" }, ctx);
 
     expect(text).toContain("No results");
   });

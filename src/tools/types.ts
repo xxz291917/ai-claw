@@ -1,6 +1,15 @@
 import type { z } from "zod";
 
 /**
+ * Per-request context passed to tool execute() at invocation time.
+ * Tools that need user identity read it from here instead of closures.
+ */
+export type ToolContext = {
+  userId: string;
+  sessionId: string;
+};
+
+/**
  * Unified tool definition — single source of truth for both providers.
  *
  * Each tool factory returns this shape. Registration utilities in register.ts
@@ -17,6 +26,6 @@ export type UnifiedToolDef = {
     properties: Record<string, unknown>;
     required?: string[];
   };
-  /** Core logic — returns plain string. Both MCP and Generic handlers derive from this. */
-  execute: (args: any) => Promise<string>;
+  /** Core logic — returns plain string. ctx provides per-request user/session info. */
+  execute: (args: any, ctx: ToolContext) => Promise<string>;
 };

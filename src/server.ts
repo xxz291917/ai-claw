@@ -49,10 +49,10 @@ export function createApp(): {
   ];
 
   // --- Tool Suite ---
-  const toolSuite = buildToolSuite(env, skillsDirs);
+  const toolSuite = buildToolSuite(env, skillsDirs, memoryManager);
 
   // --- Chat Assistant ---
-  const { provider: chatProvider } = setupChatProvider(env, skillsDirs, toolSuite);
+  const { provider: chatProvider } = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
   chatRouter(app, chatProvider, {
     sessionManager,
     eventLog,

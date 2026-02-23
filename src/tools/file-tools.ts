@@ -61,7 +61,7 @@ export function createFileTools(config: FileToolsConfig): UnifiedToolDef[] {
       },
       required: ["path"],
     },
-    execute: async (args: { path: string; offset?: number; limit?: number }) => {
+    execute: async (args: { path: string; offset?: number; limit?: number }, _ctx) => {
       let absPath: string;
       try {
         absPath = safePath(args.path, workspaceDir);
@@ -121,7 +121,7 @@ export function createFileTools(config: FileToolsConfig): UnifiedToolDef[] {
       },
       required: ["path", "content"],
     },
-    execute: async (args: { path: string; content: string }) => {
+    execute: async (args: { path: string; content: string }, _ctx) => {
       let absPath: string;
       try {
         absPath = safePath(args.path, workspaceDir);

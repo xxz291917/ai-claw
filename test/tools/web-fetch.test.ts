@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createWebFetchTool } from "../../src/tools/web-fetch.js";
 
+const ctx = { userId: "test", sessionId: "test" };
+
 describe("createWebFetchTool", () => {
   const originalFetch = globalThis.fetch;
 
@@ -28,7 +30,7 @@ describe("createWebFetchTool", () => {
     }) as any;
 
     const tool = createWebFetchTool();
-    const text = await tool.execute({ url: "https://example.com" });
+    const text = await tool.execute({ url: "https://example.com" }, ctx);
 
     expect(text).not.toContain("<script>");
     expect(text).not.toContain("alert");
@@ -48,7 +50,7 @@ describe("createWebFetchTool", () => {
     }) as any;
 
     const tool = createWebFetchTool({ firecrawlApiKey: "fc-test" });
-    const text = await tool.execute({ url: "https://firecrawl-test.example.com" });
+    const text = await tool.execute({ url: "https://firecrawl-test.example.com" }, ctx);
 
     expect(text).toBe("# Extracted Markdown\n\nClean content.");
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -78,7 +80,7 @@ describe("createWebFetchTool", () => {
     }) as any;
 
     const tool = createWebFetchTool({ firecrawlApiKey: "fc-test" });
-    const text = await tool.execute({ url: "https://fallback-test.example.com" });
+    const text = await tool.execute({ url: "https://fallback-test.example.com" }, ctx);
 
     expect(text).toContain("Fallback content");
   });
@@ -92,7 +94,7 @@ describe("createWebFetchTool", () => {
     }) as any;
 
     const tool = createWebFetchTool();
-    const text = await tool.execute({ url: "https://gone.example.com" });
+    const text = await tool.execute({ url: "https://gone.example.com" }, ctx);
 
     expect(text).toContain("404");
   });
@@ -106,7 +108,7 @@ describe("createWebFetchTool", () => {
     }) as any;
 
     const tool = createWebFetchTool();
-    const text = await tool.execute({ url: "https://example.com", maxChars: 50 });
+    const text = await tool.execute({ url: "https://example.com", maxChars: 50 }, ctx);
 
     expect(text.length).toBeLessThan(100);
     expect(text).toContain("Truncated");
@@ -120,7 +122,7 @@ describe("createWebFetchTool", () => {
     }) as any;
 
     const tool = createWebFetchTool();
-    const text = await tool.execute({ url: "https://api.example.com/data" });
+    const text = await tool.execute({ url: "https://api.example.com/data" }, ctx);
 
     expect(text).toContain('"key": "value"');
     expect(text).toContain('"nested"');

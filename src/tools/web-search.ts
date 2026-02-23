@@ -41,7 +41,7 @@ export function createWebSearchTool(config: WebSearchConfig): UnifiedToolDef {
       },
       required: ["query"],
     },
-    execute: async (args: { query: string; count?: number }) => {
+    execute: async (args: { query: string; count?: number }, _ctx) => {
       return search(config.apiKey, args.query, args.count);
     },
   };

@@ -9,10 +9,6 @@ import type { MemoryFlushFn } from "./compaction.js";
 import { handleCommand } from "./commands.js";
 import { compactHistory } from "./compaction.js";
 import { extractMemories } from "../memory/extractor.js";
-import { createMemorySaveTool } from "../tools/memory-save.js";
-import { createMemoryDeleteTool } from "../tools/memory-delete.js";
-import { createMemoryListTool } from "../tools/memory-list.js";
-import type { RequestTool } from "./types.js";
 
 type ChatRouterDeps = {
   sessionManager: SessionManager;
@@ -198,16 +194,6 @@ export function chatRouter(
         content: identityParts.join("\n\n"),
       });
 
-      // 5d. Build per-request tools (e.g. memory_save/memory_delete with userId baked in)
-      const requestTools: RequestTool[] = [];
-      if (memoryManager) {
-        requestTools.push(
-          createMemorySaveTool(memoryManager, session.userId, session.id),
-          createMemoryDeleteTool(memoryManager, session.userId),
-          createMemoryListTool(memoryManager, session.userId),
-        );
-      }
-
       return streamSSE(c, async (stream) => {
         let assistantText = "";
         // SSE heartbeat — prevents browser/proxy from closing idle connections
@@ -228,7 +214,7 @@ export function chatRouter(
             sessionId: session.providerSessionId ?? undefined,
             history,
             abortSignal: c.req.raw.signal,
-            requestTools: requestTools.length > 0 ? requestTools : undefined,
+            toolContext: { userId: session.userId, sessionId: session.id },
           })) {
             if (event.type === "text") {
               assistantText += event.content;

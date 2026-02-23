@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildToolSuite } from "../../src/tools/suite.js";
+import { MemoryManager } from "../../src/memory/manager.js";
+import { createTestDb } from "../helpers.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const skillsDirs = [resolve(__dirname, "../../src/skills")];
@@ -78,5 +80,23 @@ describe("buildToolSuite", () => {
     const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs);
 
     expect(result.genericTools.length).toBe(result.descriptions.length);
+  });
+
+  it("includes memory tools when memoryManager is provided", () => {
+    const db = createTestDb();
+    const memoryManager = new MemoryManager(db);
+    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs, memoryManager);
+
+    expect(result.descriptions.some((d) => d.includes("memory_save"))).toBe(true);
+    expect(result.descriptions.some((d) => d.includes("memory_delete"))).toBe(true);
+    expect(result.descriptions.some((d) => d.includes("memory_list"))).toBe(true);
+  });
+
+  it("omits memory tools when memoryManager is not provided", () => {
+    const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs);
+
+    expect(result.descriptions.some((d) => d.includes("memory_save"))).toBe(false);
+    expect(result.descriptions.some((d) => d.includes("memory_delete"))).toBe(false);
+    expect(result.descriptions.some((d) => d.includes("memory_list"))).toBe(false);
   });
 });

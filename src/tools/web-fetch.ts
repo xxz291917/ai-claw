@@ -39,7 +39,7 @@ export function createWebFetchTool(config: WebFetchConfig = {}): UnifiedToolDef 
       },
       required: ["url"],
     },
-    execute: async (args: { url: string; maxChars?: number }) => {
+    execute: async (args: { url: string; maxChars?: number }, _ctx) => {
       return fetchUrl(args.url, args.maxChars, config.firecrawlApiKey);
     },
   };

@@ -58,7 +58,7 @@ export function createClaudeCodeTool(config: ClaudeCodeConfig): UnifiedToolDef {
       },
       required: ["task"],
     },
-    execute: async (args: { task: string; timeout?: number }) => {
+    execute: async (args: { task: string; timeout?: number }, _ctx) => {
       return runClaudeCode(args, cwd, maxTurns, maxBudget, defaultTimeout, maxTimeout);
     },
   };

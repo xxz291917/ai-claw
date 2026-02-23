@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { createClaudeCodeTool } from "../../src/tools/claude-code.js";
 
+const ctx = { userId: "test", sessionId: "test" };
+
 // Mock child_process to avoid spawning real claude CLI
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(() => {
@@ -59,7 +61,7 @@ describe("createClaudeCodeTool", () => {
       defaultTimeoutMs: 5000,
     });
 
-    const result = await tool.execute({ task: "echo test" });
+    const result = await tool.execute({ task: "echo test" }, ctx);
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
     expect(result).toContain("Task completed");
@@ -72,7 +74,7 @@ describe("createClaudeCodeTool", () => {
       defaultTimeoutMs: 5000,
     });
 
-    const result = await tool.execute({ task: "echo fallback test" });
+    const result = await tool.execute({ task: "echo fallback test" }, ctx);
     expect(typeof result).toBe("string");
     expect(result).toContain("Task completed");
   });

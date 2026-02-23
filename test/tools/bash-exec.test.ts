@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { createBashExecTool } from "../../src/tools/bash-exec.js";
 
+const ctx = { userId: "test", sessionId: "test" };
+
 // Mock child_process to avoid spawning real shell processes
 // (prevents intermittent macOS printer dialogs from detached process groups)
 vi.mock("node:child_process", () => ({
@@ -66,7 +68,7 @@ describe("createBashExecTool", () => {
 
   it("should execute a simple command", async () => {
     const tool = createBashExecTool(defaultConfig);
-    const text = await tool.execute({ command: "echo hello" });
+    const text = await tool.execute({ command: "echo hello" }, ctx);
 
     expect(text).toContain("$ echo hello");
     expect(text).toContain("hello");
@@ -75,7 +77,7 @@ describe("createBashExecTool", () => {
 
   it("should handle non-zero exit codes without throwing", async () => {
     const tool = createBashExecTool(defaultConfig);
-    const text = await tool.execute({ command: "false" });
+    const text = await tool.execute({ command: "false" }, ctx);
 
     expect(text).toContain("Exit code: 1");
   });
@@ -85,7 +87,7 @@ describe("createBashExecTool", () => {
       ...defaultConfig,
       defaultTimeoutMs: 500,
     });
-    const text = await tool.execute({ command: "sleep 10" });
+    const text = await tool.execute({ command: "sleep 10" }, ctx);
 
     expect(text).toContain("timed out");
   }, 10000);
@@ -97,7 +99,7 @@ describe("createBashExecTool", () => {
     });
     const text = await tool.execute({
       command: "printf '%0.s-' {1..200}",
-    });
+    }, ctx);
 
     expect(text.length).toBeLessThanOrEqual(130); // 100 + truncation marker
     expect(text).toContain("...[truncated]...");
@@ -108,7 +110,7 @@ describe("createBashExecTool", () => {
       ...defaultConfig,
       allowedCommands: ["echo", "cat"],
     });
-    const text = await tool.execute({ command: "ls -la" });
+    const text = await tool.execute({ command: "ls -la" }, ctx);
 
     expect(text).toContain("not allowed");
     expect(text).toContain("ls");
@@ -120,7 +122,7 @@ describe("createBashExecTool", () => {
       ...defaultConfig,
       allowedCommands: ["echo", "cat"],
     });
-    const text = await tool.execute({ command: "echo allowed" });
+    const text = await tool.execute({ command: "echo allowed" }, ctx);
 
     expect(text).toContain("allowed");
     expect(text).toContain("Exit code: 0");
@@ -135,14 +137,14 @@ describe("createBashExecTool", () => {
     const text = await tool.execute({
       command: "sleep 10",
       timeout: 999,
-    });
+    }, ctx);
 
     expect(text).toContain("timed out");
   }, 10000);
 
   it("execute should return a string", async () => {
     const tool = createBashExecTool(defaultConfig);
-    const text = await tool.execute({ command: "echo plain" });
+    const text = await tool.execute({ command: "echo plain" }, ctx);
 
     expect(typeof text).toBe("string");
     expect(text).toContain("plain");
@@ -152,7 +154,7 @@ describe("createBashExecTool", () => {
     const tool = createBashExecTool(defaultConfig);
     const text = await tool.execute({
       command: "echo err >&2",
-    });
+    }, ctx);
 
     expect(text).toContain("[stderr]");
     expect(text).toContain("err");
@@ -165,7 +167,7 @@ describe("createBashExecTool", () => {
     });
     const text = await tool.execute({
       command: "echo partial-before-sleep && sleep 30",
-    });
+    }, ctx);
 
     expect(text).toContain("partial-before-sleep");
     expect(text).toContain("timed out");
@@ -176,7 +178,7 @@ describe("createBashExecTool", () => {
     const tool = createBashExecTool(defaultConfig);
     const text = await tool.execute({
       command: "printf 'hello\\x00world\\x07end'",
-    });
+    }, ctx);
 
     expect(text).toContain("hello");
     expect(text).toContain("world");

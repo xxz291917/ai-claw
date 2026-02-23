@@ -26,7 +26,7 @@ export function createSentryQueryTool(config: SentryConfig): UnifiedToolDef {
       },
       required: ["issue_id"],
     },
-    execute: async (args: { issue_id: string }) => {
+    execute: async (args: { issue_id: string }, _ctx) => {
       const base = (config.baseUrl ?? "https://sentry.io").replace(/\/+$/, "");
       const url = `${base}/api/0/issues/${args.issue_id}/`;
       const res = await fetch(url, {

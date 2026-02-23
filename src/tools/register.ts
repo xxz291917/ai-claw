@@ -1,16 +1,21 @@
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import type { ToolDef } from "../chat/generic-provider.js";
-import type { UnifiedToolDef } from "./types.js";
+import type { UnifiedToolDef, ToolContext } from "./types.js";
 
 /**
  * Convert a UnifiedToolDef into the three outputs needed:
  * 1. MCP tool (for Claude Agent SDK)
  * 2. Generic ToolDef (for OpenAI-compatible APIs)
  * 3. System prompt description string (auto-generated from parameters)
+ *
+ * ToolContext is threaded through at invocation time — tools that need
+ * userId/sessionId read it from there.
  */
 export function registerTool(def: UnifiedToolDef) {
+  // MCP handler — ctx not available in MCP path (Claude Agent SDK manages its own context)
+  const defaultCtx: ToolContext = { userId: "", sessionId: "" };
   const mcpHandler = async (args: any) => {
-    const text = await def.execute(args);
+    const text = await def.execute(args, defaultCtx);
     const isError = text.startsWith("Error:");
     return {
       content: [{ type: "text" as const, text }],

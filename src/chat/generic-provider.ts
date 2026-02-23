@@ -1,11 +1,12 @@
 import type { ChatProvider, ChatEvent, ChatRequest } from "./types.js";
+import type { ToolContext } from "../tools/types.js";
 import { estimateStringTokens } from "./token-utils.js";
 
 export type ToolDef = {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  handler: (args: any) => Promise<string>;
+  handler: (args: any, ctx: ToolContext) => Promise<string>;
 };
 
 export type GenericProviderConfig = {
@@ -107,18 +108,9 @@ export class GenericProvider implements ChatProvider {
     messages.push({ role: "user", content: req.message });
     console.log(`[generic] stream start — model=${this.config.model} messages=${messages.length} tokens≈${estimateTokens(messages)}`);
 
-    // Merge static tools with per-request tools (e.g. memory_save with userId baked in)
-    const allTools: ToolDef[] = [
-      ...(this.config.tools ?? []),
-      ...(req.requestTools ?? []).map((rt) => ({
-        name: rt.name,
-        description: rt.description,
-        parameters: rt.parameters,
-        handler: rt.handler,
-      })),
-    ];
-
+    const allTools: ToolDef[] = this.config.tools ?? [];
     const toolMap = new Map(allTools.map((t) => [t.name, t]));
+    const ctx: ToolContext = req.toolContext ?? { userId: "", sessionId: "" };
 
     const openaiTools = allTools.map((t) => ({
       type: "function" as const,
@@ -261,7 +253,7 @@ export class GenericProvider implements ChatProvider {
         const toolStart = Date.now();
         if (handler) {
           try {
-            result = await handler.handler(args);
+            result = await handler.handler(args, ctx);
           } catch (err: any) {
             result = `Error: ${err.message}`;
           }

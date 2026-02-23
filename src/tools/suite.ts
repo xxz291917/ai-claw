@@ -14,6 +14,10 @@ import { createWebFetchTool } from "./web-fetch.js";
 import { createBashExecTool } from "./bash-exec.js";
 import { createClaudeCodeTool } from "./claude-code.js";
 import { createFileTools } from "./file-tools.js";
+import { createMemorySaveTool } from "./memory-save.js";
+import { createMemoryDeleteTool } from "./memory-delete.js";
+import { createMemoryListTool } from "./memory-list.js";
+import type { MemoryManager } from "../memory/manager.js";
 import type { ToolDef } from "../chat/generic-provider.js";
 import type { UnifiedToolDef } from "./types.js";
 
@@ -44,6 +48,7 @@ export type ToolSuiteResult = {
 export function buildToolSuite(
   env: ToolSuiteEnv,
   skillsDirs: string[],
+  memoryManager?: MemoryManager,
 ): ToolSuiteResult {
   const toolDefs: UnifiedToolDef[] = [
     createSkillReaderTool(skillsDirs),
@@ -78,6 +83,15 @@ export function buildToolSuite(
           .map((s) => s.trim())
           .filter(Boolean),
       }),
+    );
+  }
+
+  // Memory tools — registered statically, receive userId via ToolContext at runtime
+  if (memoryManager) {
+    toolDefs.push(
+      createMemorySaveTool(memoryManager),
+      createMemoryDeleteTool(memoryManager),
+      createMemoryListTool(memoryManager),
     );
   }
 

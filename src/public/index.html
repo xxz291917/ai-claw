@@ -402,8 +402,9 @@ async function checkAuth() {
       return false;
     }
 
-    if (authToken) {
-      document.getElementById("auth-status").textContent = "Authenticated";
+    const data = await res.json().catch(() => ({}));
+    if (data.userId && data.userId !== "web-anonymous") {
+      document.getElementById("auth-status").textContent = data.userId;
     }
     return true;
   } catch {
@@ -807,7 +808,8 @@ document.getElementById("token-submit").addEventListener("click", async () => {
     // Save and proceed
     authToken = token;
     localStorage.setItem("chat_token", token);
-    document.getElementById("auth-status").textContent = "Authenticated";
+    const data = await res.json().catch(() => ({}));
+    document.getElementById("auth-status").textContent = data.userId || "Authenticated";
     hideAuthOverlay();
   } catch {
     errorEl.style.display = "block";

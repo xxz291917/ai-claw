@@ -9,9 +9,9 @@ describe("memory_delete tool", () => {
     const mgr = new MemoryManager(db);
     mgr.save("alice", [{ category: "fact", key: "name", value: "Alice" }]);
     const items = mgr.getByUser("alice");
-    const tool = createMemoryDeleteTool(mgr, "alice");
+    const tool = createMemoryDeleteTool(mgr);
 
-    const result = await tool.handler({ id: items[0].id });
+    const result = await tool.execute({ id: items[0].id }, { userId: "alice", sessionId: "s1" });
     expect(result).toContain("Deleted memory");
     expect(mgr.getByUser("alice")).toHaveLength(0);
   });
@@ -21,12 +21,12 @@ describe("memory_delete tool", () => {
     const mgr = new MemoryManager(db);
     mgr.save("alice", [{ category: "fact", key: "name", value: "Alice" }]);
     const items = mgr.getByUser("alice");
-    const tool = createMemoryDeleteTool(mgr, "alice");
+    const tool = createMemoryDeleteTool(mgr);
 
-    const result = await tool.handler({
+    const result = await tool.execute({
       id: items[0].id,
       reason: "duplicate of id=99",
-    });
+    }, { userId: "alice", sessionId: "s1" });
     expect(result).toContain("Deleted memory");
     expect(result).toContain("duplicate of id=99");
   });
@@ -36,9 +36,9 @@ describe("memory_delete tool", () => {
     const mgr = new MemoryManager(db);
     mgr.save("alice", [{ category: "fact", key: "secret", value: "private" }]);
     const aliceItems = mgr.getByUser("alice");
-    const tool = createMemoryDeleteTool(mgr, "bob");
+    const tool = createMemoryDeleteTool(mgr);
 
-    const result = await tool.handler({ id: aliceItems[0].id });
+    const result = await tool.execute({ id: aliceItems[0].id }, { userId: "bob", sessionId: "s1" });
     expect(result).toContain("Error");
     expect(result).toContain("not found or does not belong");
     expect(mgr.getByUser("alice")).toHaveLength(1);
@@ -47,16 +47,16 @@ describe("memory_delete tool", () => {
   it("returns error for nonexistent id", async () => {
     const db = createTestDb();
     const mgr = new MemoryManager(db);
-    const tool = createMemoryDeleteTool(mgr, "alice");
+    const tool = createMemoryDeleteTool(mgr);
 
-    const result = await tool.handler({ id: 9999 });
+    const result = await tool.execute({ id: 9999 }, { userId: "alice", sessionId: "s1" });
     expect(result).toContain("Error");
   });
 
   it("has correct tool metadata", () => {
     const db = createTestDb();
     const mgr = new MemoryManager(db);
-    const tool = createMemoryDeleteTool(mgr, "alice");
+    const tool = createMemoryDeleteTool(mgr);
 
     expect(tool.name).toBe("memory_delete");
     expect(tool.description).toBeTruthy();

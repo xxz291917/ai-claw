@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { createSkillReaderTool } from "../../src/tools/skill-reader.js";
 
+const ctx = { userId: "test", sessionId: "test" };
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const builtinDir = resolve(__dirname, "../../src/skills");
 
@@ -30,14 +32,14 @@ afterAll(() => {
 describe("createSkillReaderTool", () => {
   it("should return full skill content for a builtin skill", async () => {
     const tool = createSkillReaderTool([builtinDir]);
-    const text = await tool.execute({ skill_name: "github" });
+    const text = await tool.execute({ skill_name: "github" }, ctx);
     expect(text).toContain("GitHub");
     expect(text).not.toContain("Error:");
   });
 
   it("should return error for unknown skill name", async () => {
     const tool = createSkillReaderTool([builtinDir]);
-    const text = await tool.execute({ skill_name: "nonexistent" });
+    const text = await tool.execute({ skill_name: "nonexistent" }, ctx);
     expect(text).toContain("Error:");
     expect(text).toContain("not found");
     expect(text).toContain("github");
@@ -52,7 +54,7 @@ describe("createSkillReaderTool", () => {
     const tool = createSkillReaderTool([builtinDir, tmpExtra]);
     expect(tool.description).toContain("test-claw-skill");
 
-    const text = await tool.execute({ skill_name: "test-claw-skill" });
+    const text = await tool.execute({ skill_name: "test-claw-skill" }, ctx);
     expect(text).toContain("Hello from ClawHub");
     expect(text).not.toContain("Error:");
   });

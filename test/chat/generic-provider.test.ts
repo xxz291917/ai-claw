@@ -104,7 +104,7 @@ describe("GenericProvider", () => {
           name: "get_time",
           description: "Get current time",
           parameters: { type: "object", properties: {} },
-          handler: async () => "15:00",
+          handler: async (_args: any, _ctx: any) => "15:00",
         },
       ],
     });
@@ -156,7 +156,7 @@ describe("GenericProvider", () => {
           name: "big_tool",
           description: "Returns large output",
           parameters: { type: "object", properties: {} },
-          handler: async () => largeOutput,
+          handler: async (_args: any, _ctx: any) => largeOutput,
         },
       ],
     });
@@ -207,7 +207,7 @@ describe("GenericProvider", () => {
           name: "big_tool",
           description: "Returns data",
           parameters: { type: "object", properties: {} },
-          handler: async () => toolResult,
+          handler: async (_args: any, _ctx: any) => toolResult,
         },
       ],
     });

@@ -1,25 +1,30 @@
 /**
- * Per-request tool that lists ALL memories for the current user.
+ * Tool that lists ALL memories for the current user.
  *
  * Used by the memory-organizer skill to give the LLM a full picture
  * before cleanup operations. Also useful for general memory inspection.
  */
 
+import { z } from "zod";
 import type { MemoryManager } from "../memory/manager.js";
-import type { RequestTool } from "../chat/types.js";
+import type { UnifiedToolDef, ToolContext } from "./types.js";
 
 const MAX_ITEMS = 200;
 
 export function createMemoryListTool(
   memoryManager: MemoryManager,
-  userId: string,
-): RequestTool {
+): UnifiedToolDef {
   return {
     name: "memory_list",
     description:
       "List all memories stored for the current user. " +
       "Returns memories grouped by category with IDs, keys, values, and timestamps. " +
       "Use this to review the user's memory before organizing or cleaning up.",
+    inputSchema: {
+      category: z.enum(["preference", "decision", "fact", "todo"]).optional().describe(
+        "Optional: filter by category. If omitted, returns all categories.",
+      ),
+    },
     parameters: {
       type: "object",
       properties: {
@@ -32,8 +37,11 @@ export function createMemoryListTool(
       },
       required: [],
     },
-    handler: async (args: { category?: string }) => {
-      let items = memoryManager.getByUser(userId);
+    execute: async (
+      args: { category?: string },
+      ctx: ToolContext,
+    ) => {
+      let items = memoryManager.getByUser(ctx.userId);
       const totalCount = items.length;
 
       if (totalCount === 0) {

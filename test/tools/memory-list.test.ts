@@ -3,6 +3,8 @@ import { createTestDb } from "../helpers.js";
 import { MemoryManager } from "../../src/memory/manager.js";
 import { createMemoryListTool } from "../../src/tools/memory-list.js";
 
+const ctx = (userId: string) => ({ userId, sessionId: "s1" });
+
 describe("memory_list tool", () => {
   it("returns all memories for the user", async () => {
     const db = createTestDb();
@@ -11,9 +13,9 @@ describe("memory_list tool", () => {
       { category: "fact", key: "name", value: "Alice" },
       { category: "preference", key: "editor", value: "VS Code" },
     ]);
-    const tool = createMemoryListTool(mgr, "alice");
+    const tool = createMemoryListTool(mgr);
 
-    const result = await tool.handler({});
+    const result = await tool.execute({}, ctx("alice"));
 
     expect(result).toContain("Total memories: 2");
     expect(result).toContain("[fact]");
@@ -25,9 +27,9 @@ describe("memory_list tool", () => {
   it("returns empty message when no memories", async () => {
     const db = createTestDb();
     const mgr = new MemoryManager(db);
-    const tool = createMemoryListTool(mgr, "alice");
+    const tool = createMemoryListTool(mgr);
 
-    const result = await tool.handler({});
+    const result = await tool.execute({}, ctx("alice"));
 
     expect(result).toContain("No memories found");
   });
@@ -40,9 +42,9 @@ describe("memory_list tool", () => {
       { category: "preference", key: "editor", value: "VS Code" },
       { category: "todo", key: "deploy", value: "Deploy to prod" },
     ]);
-    const tool = createMemoryListTool(mgr, "alice");
+    const tool = createMemoryListTool(mgr);
 
-    const result = await tool.handler({ category: "preference" });
+    const result = await tool.execute({ category: "preference" }, ctx("alice"));
 
     expect(result).toContain("[preference]");
     expect(result).toContain("editor: VS Code");
@@ -57,25 +59,24 @@ describe("memory_list tool", () => {
     mgr.save("alice", [
       { category: "fact", key: "name", value: "Alice" },
     ]);
-    const tool = createMemoryListTool(mgr, "alice");
+    const tool = createMemoryListTool(mgr);
 
-    const result = await tool.handler({ category: "todo" });
+    const result = await tool.execute({ category: "todo" }, ctx("alice"));
 
     expect(result).toContain('No memories found in category "todo"');
     expect(result).toContain("Total memories: 1");
   });
 
-  it("isolates memories by userId closure", async () => {
+  it("isolates memories by ctx.userId", async () => {
     const db = createTestDb();
     const mgr = new MemoryManager(db);
     mgr.save("alice", [{ category: "fact", key: "name", value: "Alice" }]);
     mgr.save("bob", [{ category: "fact", key: "name", value: "Bob" }]);
 
-    const toolAlice = createMemoryListTool(mgr, "alice");
-    const toolBob = createMemoryListTool(mgr, "bob");
+    const tool = createMemoryListTool(mgr);
 
-    const resultAlice = await toolAlice.handler({});
-    const resultBob = await toolBob.handler({});
+    const resultAlice = await tool.execute({}, ctx("alice"));
+    const resultBob = await tool.execute({}, ctx("bob"));
 
     expect(resultAlice).toContain("name: Alice");
     expect(resultAlice).not.toContain("name: Bob");
@@ -88,9 +89,9 @@ describe("memory_list tool", () => {
     const mgr = new MemoryManager(db);
     mgr.save("alice", [{ category: "fact", key: "name", value: "Alice" }]);
     const items = mgr.getByUser("alice");
-    const tool = createMemoryListTool(mgr, "alice");
+    const tool = createMemoryListTool(mgr);
 
-    const result = await tool.handler({});
+    const result = await tool.execute({}, ctx("alice"));
 
     expect(result).toContain(`id=${items[0].id}`);
   });
@@ -98,7 +99,7 @@ describe("memory_list tool", () => {
   it("has correct tool metadata", () => {
     const db = createTestDb();
     const mgr = new MemoryManager(db);
-    const tool = createMemoryListTool(mgr, "alice");
+    const tool = createMemoryListTool(mgr);
 
     expect(tool.name).toBe("memory_list");
     expect(tool.description).toBeTruthy();

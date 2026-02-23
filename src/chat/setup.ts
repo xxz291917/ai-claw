@@ -10,6 +10,7 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import { ClaudeProvider } from "./claude-provider.js";
 import { GenericProvider } from "./generic-provider.js";
 import type { ChatProvider } from "./types.js";
+import type { MemoryManager } from "../memory/manager.js";
 
 export type ChatSetupEnv = ToolSuiteEnv & {
   CHAT_PROVIDER?: string;
@@ -31,8 +32,9 @@ export function setupChatProvider(
   env: ChatSetupEnv,
   skillsDirs: string[],
   existingSuite?: ToolSuiteResult,
+  memoryManager?: MemoryManager,
 ): ChatSetupResult {
-  const suite = existingSuite ?? buildToolSuite(env, skillsDirs);
+  const suite = existingSuite ?? buildToolSuite(env, skillsDirs, memoryManager);
 
   // --- Create provider ---
   const isGeneric = env.CHAT_PROVIDER === "generic" && !!env.CHAT_API_BASE && !!env.CHAT_API_KEY;
