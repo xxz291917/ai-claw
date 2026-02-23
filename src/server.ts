@@ -58,6 +58,7 @@ export function createApp(): {
     eventLog,
     memoryManager,
     maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
+    skillsDirs,
   });
 
   // Serve static files (chat UI)

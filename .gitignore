@@ -2,5 +2,6 @@ node_modules/
 dist/
 .env
 data/
-skills_extra/
+skills_extra/*
+!skills_extra/.gitkeep
 .DS_Store

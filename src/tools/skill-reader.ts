@@ -10,16 +10,16 @@ import type { UnifiedToolDef } from "./types.js";
  * when the LLM decides a skill matches the current task.
  */
 export function createSkillReaderTool(skillsDirs: string[]): UnifiedToolDef {
-  // Pre-scan available skills from all directories
-  const available = scanSkillDirs(skillsDirs);
-  const byName = new Map<string, SkillEntry>(available.map((s) => [s.name, s]));
+  // Snapshot for the static description field (MCP tool descriptions are immutable after construction).
+  // The execute() function re-scans on every call so newly installed skills are found immediately.
+  const initialScan = scanSkillDirs(skillsDirs);
 
   return {
     name: "get_skill",
     description:
       "Load the full instructions for a skill by name. " +
       "Use this when the user's task matches one of the available skills listed in your system prompt. " +
-      `Available skills: ${available.map((s) => s.name).join(", ") || "none"}`,
+      `Available skills: ${initialScan.map((s) => s.name).join(", ") || "none"}`,
     inputSchema: {
       skill_name: z
         .string()
@@ -33,6 +33,10 @@ export function createSkillReaderTool(skillsDirs: string[]): UnifiedToolDef {
       required: ["skill_name"],
     },
     execute: async (args: { skill_name: string }) => {
+      // Re-scan on every call — picks up newly installed skills without restart
+      const current = scanSkillDirs(skillsDirs);
+      const byName = new Map<string, SkillEntry>(current.map((s) => [s.name, s]));
+
       const entry = byName.get(args.skill_name);
       if (entry) {
         try {
@@ -41,7 +45,7 @@ export function createSkillReaderTool(skillsDirs: string[]): UnifiedToolDef {
           // fall through to error
         }
       }
-      const names = available.map((s) => s.name);
+      const names = current.map((s) => s.name);
       return `Error: Skill "${args.skill_name}" not found. Available: ${names.join(", ") || "none"}`;
     },
   };

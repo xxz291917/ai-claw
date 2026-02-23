@@ -465,7 +465,9 @@ inputEl.addEventListener("input", () => {
   inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
 });
 inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  // Enter sends, Shift+Enter inserts newline.
+  // Skip when IME is composing (e.g. selecting Chinese candidates).
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
 });
 sendBtn.addEventListener("click", send);
 

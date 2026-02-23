@@ -1,11 +1,14 @@
 import type { SessionManager } from "../sessions/manager.js";
 import type { ChatEvent } from "./types.js";
 import type { Session } from "../sessions/types.js";
+import { installSkill, uninstallSkill, searchSkills } from "./clawhub.js";
 
-type CommandContext = {
+export type CommandContext = {
   session: Session;
   sessionManager: SessionManager;
   providerName: string;
+  /** Absolute path to the writable skills install directory */
+  installDir: string;
 };
 
 type CommandResult = {
@@ -13,10 +16,10 @@ type CommandResult = {
   newSession?: Session;
 };
 
-export function handleCommand(
+export async function handleCommand(
   message: string,
   ctx: CommandContext,
-): CommandResult | null {
+): Promise<CommandResult | null> {
   const trimmed = message.trim();
   if (!trimmed.startsWith("/")) return null;
 
@@ -30,18 +33,26 @@ export function handleCommand(
       return handleReset(ctx);
     case "/status":
       return handleStatus(ctx);
+    case "/install":
+      return handleInstall(args, ctx);
+    case "/uninstall":
+      return handleUninstall(args, ctx);
+    case "/search":
+      return handleSearch(args, ctx);
     default:
       return null;
   }
 }
 
+// ---------------------------------------------------------------------------
+// Session commands
+// ---------------------------------------------------------------------------
+
 function handleNew(ctx: CommandContext): CommandResult {
   const { session, sessionManager, providerName } = ctx;
 
-  // Close current session
   sessionManager.close(session.id);
 
-  // Create new session
   const newSession = sessionManager.create({
     userId: session.userId,
     channel: session.channel,
@@ -90,6 +101,93 @@ function handleStatus(ctx: CommandContext): CommandResult {
     events: [
       { type: "text", content: lines.join("\n") },
       { type: "done", sessionId: session.id, costUsd: 0 },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ClawHub skill commands
+// ---------------------------------------------------------------------------
+
+async function handleInstall(
+  args: string[],
+  ctx: CommandContext,
+): Promise<CommandResult> {
+  const slug = args[0]?.trim();
+  if (!slug) {
+    return textResult(ctx.session.id, "Usage: `/install <skill-slug>`\nExample: `/install github`");
+  }
+
+  try {
+    const { tag, alreadyInstalled } = await installSkill(ctx.installDir, slug);
+    if (alreadyInstalled) {
+      return textResult(
+        ctx.session.id,
+        `Skill "${slug}" is already at the latest version (${tag}).`,
+      );
+    }
+    return textResult(
+      ctx.session.id,
+      `Installed **${slug}** (${tag}). The skill is now available — no restart needed.`,
+    );
+  } catch (err: any) {
+    return textResult(ctx.session.id, `Install failed: ${err.message}`);
+  }
+}
+
+async function handleUninstall(
+  args: string[],
+  ctx: CommandContext,
+): Promise<CommandResult> {
+  const slug = args[0]?.trim();
+  if (!slug) {
+    return textResult(ctx.session.id, "Usage: `/uninstall <skill-slug>`\nExample: `/uninstall github`");
+  }
+
+  try {
+    uninstallSkill(ctx.installDir, slug);
+    return textResult(ctx.session.id, `Uninstalled **${slug}**.`);
+  } catch (err: any) {
+    return textResult(ctx.session.id, `Uninstall failed: ${err.message}`);
+  }
+}
+
+async function handleSearch(
+  args: string[],
+  ctx: CommandContext,
+): Promise<CommandResult> {
+  const query = args.join(" ").trim();
+  if (!query) {
+    return textResult(ctx.session.id, "Usage: `/search <query>`\nExample: `/search github pull request`");
+  }
+
+  try {
+    const results = await searchSkills(query);
+    if (results.length === 0) {
+      return textResult(ctx.session.id, `No skills found for "${query}".`);
+    }
+    const lines = results.map((r) => {
+      const tags = r.tags?.length ? ` [${r.tags.join(", ")}]` : "";
+      return `- **${r.slug}**: ${r.description}${tags}`;
+    });
+    return textResult(
+      ctx.session.id,
+      `Found ${results.length} skill(s) for "${query}":\n\n${lines.join("\n")}\n\nUse \`/install <slug>\` to install.`,
+    );
+  } catch (err: any) {
+    return textResult(ctx.session.id, `Search failed: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function textResult(sessionId: string, content: string): CommandResult {
+  return {
+    events: [
+      { type: "text", content },
+      { type: "done", sessionId, costUsd: 0 },
     ],
   };
 }

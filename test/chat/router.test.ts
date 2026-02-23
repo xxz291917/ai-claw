@@ -24,7 +24,7 @@ function setup(events: ChatEvent[]) {
   const sessionManager = new SessionManager(db);
   const eventLog = new EventLog(db);
 
-  chatRouter(app, provider, { sessionManager, eventLog });
+  chatRouter(app, provider, { sessionManager, eventLog, skillsDirs: ["/tmp/test-skills"] });
   return { app, sessionManager, eventLog };
 }
 
@@ -124,7 +124,7 @@ describe("chatRouter", () => {
     };
 
     const app = new Hono();
-    chatRouter(app, provider, { sessionManager, eventLog });
+    chatRouter(app, provider, { sessionManager, eventLog, skillsDirs: ["/tmp/test-skills"] });
 
     const res = await app.request("/api/chat", {
       method: "POST",
@@ -191,6 +191,7 @@ describe("chatRouter", () => {
       sessionManager,
       eventLog,
       memoryManager,
+      skillsDirs: ["/tmp/test-skills"],
     });
 
     const res = await app.request("/api/chat", {
@@ -225,7 +226,7 @@ describe("chatRouter", () => {
       return next();
     });
 
-    chatRouter(app, provider, { sessionManager, eventLog });
+    chatRouter(app, provider, { sessionManager, eventLog, skillsDirs: ["/tmp/test-skills"] });
 
     const res = await app.request("/api/chat", {
       method: "POST",

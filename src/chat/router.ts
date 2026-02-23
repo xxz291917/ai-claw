@@ -20,6 +20,8 @@ type ChatRouterDeps = {
   /** Max estimated tokens before triggering compaction. 0 = disabled. */
   maxHistoryTokens?: number;
   memoryManager?: MemoryManager;
+  /** Skill directories — used to derive the writable install dir for /install */
+  skillsDirs: string[];
 };
 
 // Per-session concurrency lock — same session requests queue, cross-session parallel
@@ -90,10 +92,12 @@ export function chatRouter(
     }
 
     // 2. Handle slash commands (before LLM call)
-    const cmdResult = handleCommand(message, {
+    const installDir = deps.skillsDirs[1] ?? deps.skillsDirs[0];
+    const cmdResult = await handleCommand(message, {
       session,
       sessionManager,
       providerName: provider.name,
+      installDir,
     });
     if (cmdResult) {
       if (cmdResult.newSession) {
