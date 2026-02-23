@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { z } from "zod";
 import { scanSkillDirs, type SkillEntry } from "../skills/loader.js";
 import type { UnifiedToolDef } from "./types.js";
@@ -40,7 +41,14 @@ export function createSkillReaderTool(skillsDirs: string[]): UnifiedToolDef {
       const entry = byName.get(args.skill_name);
       if (entry) {
         try {
-          return readFileSync(entry.filePath, "utf-8");
+          const content = readFileSync(entry.filePath, "utf-8");
+          const skillDir = dirname(entry.filePath);
+          return (
+            `[Skill directory: ${skillDir}]\n` +
+            `[IMPORTANT: When executing files from this skill, use absolute paths. ` +
+            `For example: node ${skillDir}/index.js or bash_exec with cwd=${skillDir}]\n\n` +
+            content
+          );
         } catch {
           // fall through to error
         }

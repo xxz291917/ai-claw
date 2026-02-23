@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
+import AdmZip from "adm-zip";
 import { handleCommand } from "../../src/chat/commands.js";
 import { SessionManager } from "../../src/sessions/manager.js";
 import { createTestDb } from "../helpers.js";
@@ -36,6 +37,7 @@ function ctx(s: ReturnType<typeof setup>) {
     sessionManager: s.sessionManager,
     providerName: "test",
     installDir: tmpInstallDir,
+    skillsDirs: ["/tmp/test-skills", tmpInstallDir],
   };
 }
 
@@ -96,6 +98,33 @@ describe("handleCommand", () => {
     const result = await handleCommand("/STATUS", ctx(s));
     expect(result).toBeTruthy();
   });
+
+  it("/skills lists available skills", async () => {
+    const s = setup();
+    // Install a skill so there's something to list
+    mkdirSync(join(tmpInstallDir, "demo"), { recursive: true });
+    writeFileSync(
+      join(tmpInstallDir, "demo", "SKILL.md"),
+      "---\nname: demo\ndescription: A demo skill\n---\n# Demo",
+    );
+
+    const result = await handleCommand("/skills", ctx(s));
+    expect(result).toBeTruthy();
+    const text = (result!.events[0] as any).content;
+    expect(text).toContain("demo");
+    expect(text).toContain("A demo skill");
+  });
+
+  it("/help lists available commands", async () => {
+    const s = setup();
+    const result = await handleCommand("/help", ctx(s));
+    expect(result).toBeTruthy();
+    const text = (result!.events[0] as any).content;
+    expect(text).toContain("/new");
+    expect(text).toContain("/skills");
+    expect(text).toContain("/install");
+    expect(text).toContain("/search");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -112,6 +141,10 @@ describe("handleCommand — /install", () => {
 
   it("installs a skill from registry", async () => {
     const s = setup();
+    const zip = new AdmZip();
+    zip.addFile("SKILL.md", Buffer.from("---\nname: demo\n---\n# Demo"));
+    const zipBuf = zip.toBuffer();
+
     vi.stubGlobal(
       "fetch",
       vi.fn()
@@ -127,7 +160,10 @@ describe("handleCommand — /install", () => {
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          text: async () => "---\nname: demo\n---\n# Demo",
+          arrayBuffer: async () => zipBuf.buffer.slice(
+            zipBuf.byteOffset,
+            zipBuf.byteOffset + zipBuf.byteLength,
+          ),
         }),
     );
 

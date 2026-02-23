@@ -93,9 +93,11 @@ Before replying, scan the available skills below and check if any matches the us
 - If multiple could apply → choose the most specific one, load it, then follow it.
 - If none clearly apply → do not load any skill. Answer directly.
 
-Constraints:
-- Load at most ONE skill per task. Do not load skills speculatively.
-- After loading a skill, follow its instructions — do not ignore them.
+### Skill execution flow (MUST follow this order):
+1. Call \`get_skill("skill_name")\` — the response includes \`[Skill directory: /absolute/path]\` and usage instructions.
+2. Read the returned instructions carefully. Use the **absolute path** from \`[Skill directory: ...]\` when running any files.
+3. Execute with \`bash_exec\` using the absolute path, e.g. \`node /absolute/path/index.js\` or set \`cwd\` to the skill directory.
+4. Do NOT guess paths. Do NOT use relative paths. Do NOT delegate to \`claude_code\`.
 
 ${skillList}`);
   }

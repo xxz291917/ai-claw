@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
+import AdmZip from "adm-zip";
 import {
   validateSlug,
   safeSkillPath,
@@ -9,6 +10,15 @@ import {
   uninstallSkill,
   searchSkills,
 } from "../../src/chat/clawhub.js";
+
+/** Build a zip Buffer containing the given files. */
+function buildZip(files: Record<string, string>): Buffer {
+  const zip = new AdmZip();
+  for (const [name, content] of Object.entries(files)) {
+    zip.addFile(name, Buffer.from(content, "utf-8"));
+  }
+  return zip.toBuffer();
+}
 
 const tmpDir = resolve("/tmp", `clawhub-test-${process.pid}`);
 
@@ -96,8 +106,8 @@ describe("readLockFile", () => {
 // ---------------------------------------------------------------------------
 
 describe("installSkill", () => {
-  it("downloads SKILL.md and updates lockfile", async () => {
-    const skillContent = "---\nname: demo\ndescription: Demo\n---\n# Demo";
+  /** Mock fetch: first call returns metadata, second returns zip buffer */
+  function mockFetchForInstall(tag: string, zipBuf: Buffer) {
     vi.stubGlobal(
       "fetch",
       vi.fn()
@@ -107,30 +117,71 @@ describe("installSkill", () => {
           json: async () => ({
             slug: "demo",
             name: "Demo",
-            latestVersion: { version: "v1.0" },
+            latestVersion: { version: tag },
           }),
         })
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          text: async () => skillContent,
+          arrayBuffer: async () => zipBuf.buffer.slice(
+            zipBuf.byteOffset,
+            zipBuf.byteOffset + zipBuf.byteLength,
+          ),
         }),
     );
+  }
+
+  it("downloads zip and extracts all files", async () => {
+    const skillContent = "---\nname: demo\n---\n# Demo";
+    const indexContent = "console.log('demo');";
+    const zipBuf = buildZip({
+      "SKILL.md": skillContent,
+      "index.js": indexContent,
+      "_meta.json": '{"slug":"demo"}',
+    });
+    mockFetchForInstall("v1.0", zipBuf);
 
     const result = await installSkill(tmpDir, "demo");
     expect(result.tag).toBe("v1.0");
     expect(result.alreadyInstalled).toBe(false);
-    expect(existsSync(join(tmpDir, "demo", "SKILL.md"))).toBe(true);
-    expect(readFileSync(join(tmpDir, "demo", "SKILL.md"), "utf-8")).toBe(
-      skillContent,
-    );
+
+    // SKILL.md and index.js should be extracted
+    expect(readFileSync(join(tmpDir, "demo", "SKILL.md"), "utf-8")).toBe(skillContent);
+    expect(readFileSync(join(tmpDir, "demo", "index.js"), "utf-8")).toBe(indexContent);
+
+    // _meta.json should be skipped
+    expect(existsSync(join(tmpDir, "demo", "_meta.json"))).toBe(false);
 
     const lock = readLockFile(tmpDir);
     expect(lock.skills["demo"]?.tag).toBe("v1.0");
   });
 
+  it("extracts files in subdirectories", async () => {
+    const zipBuf = buildZip({
+      "SKILL.md": "# Demo",
+      "scripts/test.js": "// test",
+    });
+    mockFetchForInstall("v1.0", zipBuf);
+
+    await installSkill(tmpDir, "demo");
+    expect(readFileSync(join(tmpDir, "demo", "scripts", "test.js"), "utf-8")).toBe("// test");
+  });
+
+  it("clears old files on upgrade", async () => {
+    // Pre-install an old version with an extra file
+    mkdirSync(join(tmpDir, "demo"), { recursive: true });
+    writeFileSync(join(tmpDir, "demo", "old-file.txt"), "stale");
+
+    const zipBuf = buildZip({ "SKILL.md": "# v2" });
+    mockFetchForInstall("v2.0", zipBuf);
+
+    await installSkill(tmpDir, "demo");
+    // Old file should be gone
+    expect(existsSync(join(tmpDir, "demo", "old-file.txt"))).toBe(false);
+    expect(readFileSync(join(tmpDir, "demo", "SKILL.md"), "utf-8")).toBe("# v2");
+  });
+
   it("reports alreadyInstalled when tag matches", async () => {
-    // Pre-populate lockfile
     mkdirSync(join(tmpDir, ".clawhub"), { recursive: true });
     writeFileSync(
       join(tmpDir, ".clawhub", "lock.json"),

@@ -12,7 +12,8 @@ import {
   rmSync,
   existsSync,
 } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
+import AdmZip from "adm-zip";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -21,6 +22,8 @@ import { resolve, join } from "node:path";
 const CLAWHUB_BASE = "https://clawhub.ai";
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_SKILL_BYTES = 200_000; // registry limit
+const RETRY_ATTEMPTS = 3;
+const RETRY_BASE_MS = 1_000; // 1s, 2s, 4s exponential backoff
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,15 +56,36 @@ export type LockFile = {
 };
 
 // ---------------------------------------------------------------------------
+// Retry helper (handles 429 rate-limit)
+// ---------------------------------------------------------------------------
+
+async function fetchRetry(
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      ...init,
+    });
+    if (res.status !== 429) return res;
+    // Exponential backoff: 1s, 2s, 4s
+    const delay = RETRY_BASE_MS * 2 ** attempt;
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  // Final attempt — return whatever we get
+  return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), ...init });
+}
+
+// ---------------------------------------------------------------------------
 // Registry API
 // ---------------------------------------------------------------------------
 
 /** GET /api/v1/skills/{slug} — skill metadata + latest version */
 export async function fetchSkillMeta(slug: string): Promise<SkillMeta> {
   validateSlug(slug);
-  const res = await fetch(
+  const res = await fetchRetry(
     `${CLAWHUB_BASE}/api/v1/skills/${encodeURIComponent(slug)}`,
-    { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
   );
   if (res.status === 404) {
     throw new Error(`Skill "${slug}" not found in ClawHub registry`);
@@ -86,9 +110,8 @@ export async function fetchSkillContent(
 ): Promise<string> {
   validateSlug(slug);
   const params = new URLSearchParams({ path: "SKILL.md", tag });
-  const res = await fetch(
+  const res = await fetchRetry(
     `${CLAWHUB_BASE}/api/v1/skills/${encodeURIComponent(slug)}/file?${params}`,
-    { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
   );
   if (res.status === 404) {
     throw new Error(`SKILL.md for "${slug}@${tag}" not found`);
@@ -107,9 +130,7 @@ export async function fetchSkillContent(
 export async function searchSkills(query: string): Promise<SearchResult[]> {
   if (!query.trim()) throw new Error("Search query cannot be empty");
   const params = new URLSearchParams({ q: query.trim() });
-  const res = await fetch(`${CLAWHUB_BASE}/api/v1/search?${params}`, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const res = await fetchRetry(`${CLAWHUB_BASE}/api/v1/search?${params}`);
   if (!res.ok) {
     throw new Error(`ClawHub search error: ${res.status} ${res.statusText}`);
   }
@@ -127,8 +148,25 @@ export async function searchSkills(query: string): Promise<SearchResult[]> {
 // Install / Uninstall
 // ---------------------------------------------------------------------------
 
+/** GET /api/v1/download?slug={slug}&tag={tag} — full zip package */
+async function fetchSkillZip(slug: string, tag: string): Promise<Buffer> {
+  const params = new URLSearchParams({
+    slug: encodeURIComponent(slug),
+    tag: encodeURIComponent(tag),
+  });
+  const res = await fetchRetry(`${CLAWHUB_BASE}/api/v1/download?${params}`);
+  if (res.status === 404) {
+    throw new Error(`Skill "${slug}@${tag}" not found for download`);
+  }
+  if (!res.ok) {
+    throw new Error(`ClawHub download error: ${res.status} ${res.statusText}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 /**
- * Install a skill from ClawHub registry into installDir/<slug>/SKILL.md.
+ * Install a skill from ClawHub registry.
+ * Downloads the full zip package and extracts all files into installDir/<slug>/.
  * Updates the lockfile. Returns the installed tag.
  */
 export async function installSkill(
@@ -146,10 +184,29 @@ export async function installSkill(
     return { tag, alreadyInstalled: true };
   }
 
-  const content = await fetchSkillContent(slug, tag);
+  const zipBuf = await fetchSkillZip(slug, tag);
+  const zip = new AdmZip(zipBuf);
 
+  // Clear target dir to remove stale files from previous versions
+  rmSync(skillDir, { recursive: true, force: true });
   mkdirSync(skillDir, { recursive: true });
-  writeFileSync(join(skillDir, "SKILL.md"), content, "utf-8");
+
+  const resolvedSkillDir = resolve(skillDir);
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue;
+    const name = entry.entryName;
+    // Skip ClawHub internal metadata
+    if (name === "_meta.json") continue;
+    // Zip slip protection: reject paths with ".."
+    if (name.includes("..")) continue;
+
+    const target = resolve(skillDir, name);
+    // Zip slip protection: ensure target stays within skillDir
+    if (!target.startsWith(resolvedSkillDir + "/")) continue;
+
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, entry.getData());
+  }
 
   lock.skills[slug] = { slug, tag, installedAt: new Date().toISOString() };
   writeLockFile(installDir, lock);

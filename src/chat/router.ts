@@ -98,6 +98,7 @@ export function chatRouter(
       sessionManager,
       providerName: provider.name,
       installDir,
+      skillsDirs: deps.skillsDirs,
     });
     if (cmdResult) {
       if (cmdResult.newSession) {

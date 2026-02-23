@@ -2,6 +2,7 @@ import type { SessionManager } from "../sessions/manager.js";
 import type { ChatEvent } from "./types.js";
 import type { Session } from "../sessions/types.js";
 import { installSkill, uninstallSkill, searchSkills } from "./clawhub.js";
+import { scanSkillDirs } from "../skills/loader.js";
 
 export type CommandContext = {
   session: Session;
@@ -9,6 +10,8 @@ export type CommandContext = {
   providerName: string;
   /** Absolute path to the writable skills install directory */
   installDir: string;
+  /** All skill directories (for /skills listing) */
+  skillsDirs: string[];
 };
 
 type CommandResult = {
@@ -33,6 +36,10 @@ export async function handleCommand(
       return handleReset(ctx);
     case "/status":
       return handleStatus(ctx);
+    case "/skills":
+      return handleSkills(ctx);
+    case "/help":
+      return handleHelp(ctx);
     case "/install":
       return handleInstall(args, ctx);
     case "/uninstall":
@@ -103,6 +110,37 @@ function handleStatus(ctx: CommandContext): CommandResult {
       { type: "done", sessionId: session.id, costUsd: 0 },
     ],
   };
+}
+
+function handleSkills(ctx: CommandContext): CommandResult {
+  const skills = scanSkillDirs(ctx.skillsDirs);
+  if (skills.length === 0) {
+    return textResult(ctx.session.id, "No skills installed.");
+  }
+  const lines = skills.map(
+    (s) => `- **${s.name}**: ${s.description}`,
+  );
+  return textResult(
+    ctx.session.id,
+    `Available skills (${skills.length}):\n\n${lines.join("\n")}\n\nUse \`/search <query>\` to find more on ClawHub.`,
+  );
+}
+
+function handleHelp(ctx: CommandContext): CommandResult {
+  return textResult(
+    ctx.session.id,
+    [
+      "Available commands:",
+      "  `/new` — Start a new session",
+      "  `/reset` — Clear current session messages",
+      "  `/status` — Show session info",
+      "  `/skills` — List all available skills",
+      "  `/install <slug>` — Install a skill from ClawHub",
+      "  `/uninstall <slug>` — Remove an installed skill",
+      "  `/search <query>` — Search ClawHub for skills",
+      "  `/help` — Show this help message",
+    ].join("\n"),
+  );
 }
 
 // ---------------------------------------------------------------------------
