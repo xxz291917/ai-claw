@@ -141,4 +141,34 @@ describe("MemoryManager", () => {
       expect(results).toHaveLength(0);
     });
   });
+
+  describe("removeByUser", () => {
+    it("deletes memory when userId matches", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+      mgr.save("alice", [{ category: "fact", key: "name", value: "Alice" }]);
+      const items = mgr.getByUser("alice");
+
+      const ok = mgr.removeByUser(items[0].id, "alice");
+      expect(ok).toBe(true);
+      expect(mgr.getByUser("alice")).toHaveLength(0);
+    });
+
+    it("refuses to delete when userId does not match", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+      mgr.save("alice", [{ category: "fact", key: "name", value: "Alice" }]);
+      const items = mgr.getByUser("alice");
+
+      const ok = mgr.removeByUser(items[0].id, "bob");
+      expect(ok).toBe(false);
+      expect(mgr.getByUser("alice")).toHaveLength(1);
+    });
+
+    it("returns false for nonexistent id", () => {
+      const db = createTestDb();
+      const mgr = new MemoryManager(db);
+      expect(mgr.removeByUser(9999, "alice")).toBe(false);
+    });
+  });
 });

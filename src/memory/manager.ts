@@ -1,5 +1,4 @@
 import type Database from "better-sqlite3";
-import { randomUUID } from "node:crypto";
 import type { MemoryItem, ExtractedMemory } from "./types.js";
 
 export class MemoryManager {
@@ -11,8 +10,8 @@ export class MemoryManager {
     sourceSessionId?: string,
   ): void {
     const upsert = this.db.prepare(`
-      INSERT INTO memory (id, user_id, category, key, value, source_session_id)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO memory (user_id, category, key, value, source_session_id)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (user_id, category, key) DO UPDATE SET
         value = excluded.value,
         source_session_id = excluded.source_session_id,
@@ -22,7 +21,6 @@ export class MemoryManager {
     const run = this.db.transaction((rows: ExtractedMemory[]) => {
       for (const item of rows) {
         upsert.run(
-          randomUUID(),
           userId,
           item.category,
           item.key,
@@ -60,7 +58,7 @@ export class MemoryManager {
     const rows = this.db
       .prepare(
         `SELECT m.* FROM memory m
-         JOIN memory_fts fts ON m.rowid = fts.rowid
+         JOIN memory_fts fts ON m.id = fts.rowid
          WHERE fts.memory_fts MATCH ? AND m.user_id = ?
          ORDER BY fts.rank
          LIMIT ?`,
@@ -69,8 +67,16 @@ export class MemoryManager {
     return rows.map(mapRow);
   }
 
-  remove(id: string): void {
+  remove(id: number): void {
     this.db.prepare("DELETE FROM memory WHERE id = ?").run(id);
+  }
+
+  /** Delete a memory only if it belongs to the given user. Returns true if deleted. */
+  removeByUser(id: number, userId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM memory WHERE id = ? AND user_id = ?")
+      .run(id, userId);
+    return result.changes > 0;
   }
 }
 

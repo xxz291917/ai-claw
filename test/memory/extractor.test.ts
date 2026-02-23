@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { extractMemories } from "../../src/memory/extractor.js";
+import type { MemoryItem } from "../../src/memory/types.js";
 
 type Msg = { role: "user" | "assistant" | "system"; content: string };
 
@@ -64,5 +65,49 @@ describe("extractMemories", () => {
     const result = await extractMemories(sampleMessages, callLlm);
     expect(result).toHaveLength(1);
     expect(result[0].key).toBe("lang");
+  });
+
+  it("includes existing memories in the prompt when provided", async () => {
+    const existingMemories: MemoryItem[] = [
+      {
+        id: 1,
+        userId: "alice",
+        category: "decision",
+        key: "部署方案",
+        value: "Docker Compose",
+        sourceSessionId: null,
+        createdAt: "",
+        updatedAt: "",
+      },
+    ];
+
+    const callLlm = vi.fn().mockResolvedValue(
+      JSON.stringify([{ category: "decision", key: "部署方案", value: "Kubernetes" }]),
+    );
+
+    const result = await extractMemories(sampleMessages, callLlm, existingMemories);
+
+    // Verify prompt includes existing memories section
+    const prompt = callLlm.mock.calls[0][0] as string;
+    expect(prompt).toContain("已有记忆");
+    expect(prompt).toContain("部署方案");
+    expect(prompt).toContain("Docker Compose");
+
+    // Verify extraction still works
+    expect(result).toHaveLength(1);
+    expect(result[0].key).toBe("部署方案");
+  });
+
+  it("works without existing memories (backward compat)", async () => {
+    const callLlm = vi.fn().mockResolvedValue(
+      JSON.stringify([{ category: "fact", key: "lang", value: "TS" }]),
+    );
+
+    // Call without third argument
+    const result = await extractMemories(sampleMessages, callLlm);
+
+    const prompt = callLlm.mock.calls[0][0] as string;
+    expect(prompt).not.toContain("已有记忆");
+    expect(result).toHaveLength(1);
   });
 });

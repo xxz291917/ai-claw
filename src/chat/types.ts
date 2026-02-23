@@ -10,11 +10,21 @@ export type ChatEvent =
   | { type: "error"; message: string }
   | { type: "done"; sessionId: string; costUsd: number };
 
+/** Lightweight tool definition for per-request tools injected by the router. */
+export type RequestTool = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  handler: (args: any) => Promise<string>;
+};
+
 export type ChatRequest = {
   message: string;
   sessionId?: string;
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   abortSignal?: AbortSignal;
+  /** Per-request tools (e.g. memory_save with userId baked in). Merged with static tools. */
+  requestTools?: RequestTool[];
 };
 
 export interface ChatProvider {
