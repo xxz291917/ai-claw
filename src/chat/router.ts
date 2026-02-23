@@ -9,6 +9,9 @@ import type { MemoryFlushFn } from "./compaction.js";
 import { handleCommand } from "./commands.js";
 import { compactHistory } from "./compaction.js";
 import { extractMemories } from "../memory/extractor.js";
+import { createMemorySaveTool } from "../tools/memory-save.js";
+import { createMemoryDeleteTool } from "../tools/memory-delete.js";
+import type { RequestTool } from "./types.js";
 
 type ChatRouterDeps = {
   sessionManager: SessionManager;
@@ -52,6 +55,12 @@ export function chatRouter(
   const { sessionManager, eventLog, memoryManager } = deps;
   const maxHistoryMessages = deps.maxHistoryMessages ?? 40;
   const maxHistoryTokens = deps.maxHistoryTokens ?? 0;
+
+  // Lightweight auth check — no session creation
+  app.get("/api/chat", (c) => {
+    const userId = c.get("userId") ?? "web-anonymous";
+    return c.json({ status: "ok", userId });
+  });
 
   app.post("/api/chat", async (c) => {
     const t0 = Date.now();
@@ -113,22 +122,19 @@ export function chatRouter(
 
       console.log(`[chat] history: ${rawHistory.length} messages`);
 
-      // 5a. Inject relevant memories
+      // 5a. Search relevant memories (inject after compaction)
+      let memoryText: string | null = null;
       if (memoryManager) {
         try {
           const memories = memoryManager.search(session.userId, message);
           console.log(`[chat] memory search: ${memories.length} results`);
           if (memories.length > 0) {
-            const memoryText = memories
-              .map((m) => `- [${m.category}] ${m.key}: ${m.value}`)
+            memoryText = memories
+              .map((m) => `- id=${m.id} [${m.category}] ${m.key}: ${m.value}`)
               .join("\n");
-            rawHistory.unshift({
-              role: "system",
-              content: `你了解该用户的以下信息:\n${memoryText}`,
-            });
           }
         } catch {
-          // Best-effort — skip memory injection on error
+          // Best-effort — skip memory on error
         }
       }
 
@@ -136,10 +142,14 @@ export function chatRouter(
       const memoryFlush: MemoryFlushFn | undefined =
         memoryManager && provider.summarize
           ? async (early) => {
-              const items = await extractMemories(early, (prompt) =>
-                provider.summarize!(
-                  [{ role: "user", content: prompt }],
-                ),
+              const existing = memoryManager.getByUser(session.userId);
+              const items = await extractMemories(
+                early,
+                (prompt) =>
+                  provider.summarize!(
+                    [{ role: "user", content: prompt }],
+                  ),
+                existing,
               );
               if (items.length > 0) {
                 memoryManager.save(session.userId, items, session.id);
@@ -156,10 +166,28 @@ export function chatRouter(
 
       // Persist compacted history so subsequent requests don't re-summarize
       if (history.length < rawHistory.length) {
-        console.log(`[chat] compacted ${rawHistory.length} → ${history.length} messages, persisting (${Date.now() - t0}ms)`);
-        sessionManager.replaceMessages(session.id, history);
+        const keepCount = history.length - 1; // exclude the summary message
+        console.log(`[chat] compacted ${rawHistory.length} → ${history.length} messages (keep=${keepCount}), persisting (${Date.now() - t0}ms)`);
+        sessionManager.compactMessages(session.id, keepCount, history[0]);
       } else {
         console.log(`[chat] history: ${history.length} messages, no compaction needed (${Date.now() - t0}ms)`);
+      }
+
+      // 5c. Inject memories AFTER compaction — always present for LLM, never persisted
+      if (memoryText) {
+        history.unshift({
+          role: "system",
+          content: `你了解该用户的以下信息:\n${memoryText}`,
+        });
+      }
+
+      // 5d. Build per-request tools (e.g. memory_save/memory_delete with userId baked in)
+      const requestTools: RequestTool[] = [];
+      if (memoryManager) {
+        requestTools.push(
+          createMemorySaveTool(memoryManager, session.userId, session.id),
+          createMemoryDeleteTool(memoryManager, session.userId),
+        );
       }
 
       return streamSSE(c, async (stream) => {
@@ -182,6 +210,7 @@ export function chatRouter(
             sessionId: session.providerSessionId ?? undefined,
             history,
             abortSignal: c.req.raw.signal,
+            requestTools: requestTools.length > 0 ? requestTools : undefined,
           })) {
             if (event.type === "text") {
               assistantText += event.content;

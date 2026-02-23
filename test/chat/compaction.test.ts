@@ -14,8 +14,13 @@ function makeMessages(count: number): Msg[] {
   return msgs;
 }
 
-// keep = floor(max * 0.75) to leave headroom before next compaction
-// maxMessages=20 → keep=15, maxMessages=40 → keep=30
+// Dynamic keep ratio based on pressure = max(msgs/max, tokens/maxTokens):
+//   pressure ≤ 1.5 → keep 75%   (gentle)
+//   pressure ≤ 2.0 → keep 50%   (medium)
+//   pressure > 2.0 → keep 25%   (aggressive)
+//
+// 50 msgs, maxMessages=20 → pressure=2.5 → keep=floor(20*0.25)=5
+// 50 msgs, maxMessages=40 → pressure=1.25 → keep=floor(40*0.75)=30
 
 describe("compactHistory", () => {
   it("returns history unchanged when under max", async () => {
@@ -28,14 +33,14 @@ describe("compactHistory", () => {
     const history = makeMessages(50);
     const result = await compactHistory(history, { maxMessages: 20 });
 
-    // keep=15, so 1 system note + 15 recent = 16
-    expect(result).toHaveLength(16);
+    // pressure=2.5 → keep=25% → floor(20*0.25)=5, 1 note + 5 recent = 6
+    expect(result).toHaveLength(6);
     expect(result[0]).toMatchObject({
       role: "system",
-      content: "[Earlier 35 messages omitted]",
+      content: "[Earlier 45 messages omitted]",
     });
     // Last message should be the last from original
-    expect(result[15].content).toBe("message 49");
+    expect(result[5].content).toBe("message 49");
   });
 
   it("uses summarizer when provided", async () => {
@@ -48,11 +53,11 @@ describe("compactHistory", () => {
     });
 
     expect(summarize).toHaveBeenCalledTimes(1);
-    // Summarizer receives the 35 early messages (50 - keep=15)
-    expect(summarize.mock.calls[0][0]).toHaveLength(35);
+    // pressure=2.5 → keep=5, summarizer receives 45 early messages
+    expect(summarize.mock.calls[0][0]).toHaveLength(45);
 
-    // 1 summary + 15 recent = 16
-    expect(result).toHaveLength(16);
+    // 1 summary + 5 recent = 6
+    expect(result).toHaveLength(6);
     expect(result[0]).toMatchObject({
       role: "system",
       content: "Previous conversation summary:\nSummary of early conversation",
@@ -68,10 +73,11 @@ describe("compactHistory", () => {
       summarize,
     });
 
-    expect(result).toHaveLength(16);
+    // pressure=2.5 → keep=5
+    expect(result).toHaveLength(6);
     expect(result[0]).toMatchObject({
       role: "system",
-      content: "[Earlier 35 messages omitted]",
+      content: "[Earlier 45 messages omitted]",
     });
   });
 
@@ -91,8 +97,8 @@ describe("compactHistory", () => {
       await compactHistory(history, { maxMessages: 20, memoryFlush });
 
       expect(memoryFlush).toHaveBeenCalledTimes(1);
-      // Should receive the 35 early messages (50 - keep=15)
-      expect(memoryFlush.mock.calls[0][0]).toHaveLength(35);
+      // pressure=2.5 → keep=5, flush receives 45 early messages
+      expect(memoryFlush.mock.calls[0][0]).toHaveLength(45);
     });
 
     it("still compacts normally if memoryFlush fails", async () => {
@@ -104,8 +110,8 @@ describe("compactHistory", () => {
         memoryFlush,
       });
 
-      // Should still produce compacted result: 1 note + 15 recent = 16
-      expect(result).toHaveLength(16);
+      // pressure=2.5 → keep=5, 1 note + 5 recent = 6
+      expect(result).toHaveLength(6);
       expect(result[0].role).toBe("system");
     });
 
@@ -225,8 +231,9 @@ describe("compactHistory", () => {
   describe("Token-based Trigger", () => {
     it("triggers compaction when token budget exceeded even if under message count", async () => {
       // 35 messages with long content → lots of tokens
-      // maxMessages=40 → not triggered (35 <= 40)
-      // keep = floor(40 * 0.75) = 30, cutoff = 35 - 30 = 5
+      // msgPressure = 35/40 = 0.875 (under threshold)
+      // tokenPressure ≈ 8750/500 = 17.5 (way over)
+      // pressure = 17.5 → keepRatio = 0.25 → keep = floor(40*0.25) = 10
       const history: Msg[] = [];
       for (let i = 0; i < 35; i++) {
         history.push({
@@ -240,8 +247,8 @@ describe("compactHistory", () => {
         maxTokens: 500,   // will trigger on tokens (~8750 >> 500)
       });
 
-      // 1 system note + 30 kept = 31 < 35
-      expect(result).toHaveLength(31);
+      // 1 system note + 10 kept = 11
+      expect(result).toHaveLength(11);
       expect(result[0].role).toBe("system");
     });
 

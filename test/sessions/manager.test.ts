@@ -127,23 +127,80 @@ describe("SessionManager", () => {
     expect(after.lastActiveAt >= before.lastActiveAt).toBe(true);
   });
 
-  it("stores toolCalls in messages", () => {
-    const db = createTestDb();
-    const mgr = new SessionManager(db);
-    const session = mgr.create({
-      userId: "u1",
-      channel: "web_chat",
-      channelId: "tab-1",
-      provider: "claude",
+  describe("compactMessages", () => {
+    it("deletes early messages and inserts summary, keeps recent intact", () => {
+      const db = createTestDb();
+      const mgr = new SessionManager(db);
+      const session = mgr.create({
+        userId: "u1",
+        channel: "web_chat",
+        channelId: "tab-1",
+        provider: "claude",
+      });
+
+      // Insert 10 messages
+      for (let i = 0; i < 10; i++) {
+        mgr.appendMessage(session.id, {
+          role: i % 2 === 0 ? "user" : "assistant",
+          content: `msg-${i}`,
+        });
+      }
+
+      const before = mgr.getMessages(session.id);
+      expect(before).toHaveLength(10);
+      const keptIds = before.slice(7).map((m) => m.id); // last 3
+      const keptTimestamps = before.slice(7).map((m) => m.createdAt);
+
+      // Compact: keep 3 recent, replace first 7 with summary
+      mgr.compactMessages(session.id, 3, {
+        role: "system",
+        content: "Summary of early messages",
+        type: "summary",
+      });
+
+      const after = mgr.getMessages(session.id);
+      expect(after).toHaveLength(4); // 1 summary + 3 kept
+
+      // Summary should be first (lowest id)
+      expect(after[0].role).toBe("system");
+      expect(after[0].content).toBe("Summary of early messages");
+      expect(after[0].type).toBe("summary");
+      // Summary reuses the last deleted message's id (adjacent to kept messages)
+      expect(after[0].id).toBe(before[6].id);
+      // Summary preserves the last deleted message's timestamp
+      expect(after[0].createdAt).toBe(before[6].createdAt);
+
+      // Recent messages should keep their original IDs and timestamps
+      expect(after[1].id).toBe(keptIds[0]);
+      expect(after[2].id).toBe(keptIds[1]);
+      expect(after[3].id).toBe(keptIds[2]);
+      expect(after[1].createdAt).toBe(keptTimestamps[0]);
+      expect(after[1].content).toBe("msg-7");
+      expect(after[3].content).toBe("msg-9");
     });
-    const toolCallsJson = JSON.stringify([{ name: "search", args: { q: "test" } }]);
-    const msg = mgr.appendMessage(session.id, {
-      role: "assistant",
-      content: "Let me search that.",
-      toolCalls: toolCallsJson,
+
+    it("does nothing when keepCount >= total messages", () => {
+      const db = createTestDb();
+      const mgr = new SessionManager(db);
+      const session = mgr.create({
+        userId: "u1",
+        channel: "web_chat",
+        channelId: "tab-1",
+        provider: "claude",
+      });
+
+      mgr.appendMessage(session.id, { role: "user", content: "hello" });
+      mgr.appendMessage(session.id, { role: "assistant", content: "hi" });
+
+      mgr.compactMessages(session.id, 5, {
+        role: "system",
+        content: "should not appear",
+      });
+
+      const msgs = mgr.getMessages(session.id);
+      expect(msgs).toHaveLength(2);
+      expect(msgs[0].content).toBe("hello");
     });
-    expect(msg.toolCalls).toBe(toolCallsJson);
-    const messages = mgr.getMessages(session.id);
-    expect(messages[0].toolCalls).toBe(toolCallsJson);
   });
+
 });

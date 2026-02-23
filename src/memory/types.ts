@@ -1,7 +1,7 @@
 export type MemoryCategory = "preference" | "decision" | "fact" | "todo";
 
 export type MemoryItem = {
-  id: string;
+  id: number;
   userId: string;
   category: MemoryCategory;
   key: string;

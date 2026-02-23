@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { Session, Message } from "./types.js";
+import type { Session, Message, MessageType } from "./types.js";
 
 type CreateSessionParams = {
   userId: string;
@@ -12,7 +12,6 @@ type CreateSessionParams = {
 type AppendMessageParams = {
   role: "user" | "assistant" | "system";
   content: string;
-  toolCalls?: string;
 };
 
 export class SessionManager {
@@ -73,17 +72,16 @@ export class SessionManager {
   }
 
   appendMessage(sessionId: string, params: AppendMessageParams): Message {
-    const id = randomUUID();
-    this.db
+    const result = this.db
       .prepare(
-        `INSERT INTO messages (id, session_id, role, content, tool_calls)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO messages (session_id, role, content)
+         VALUES (?, ?, ?)`,
       )
-      .run(id, sessionId, params.role, params.content, params.toolCalls ?? null);
+      .run(sessionId, params.role, params.content);
 
     this.touch(sessionId);
 
-    return this.getMessageById(id)!;
+    return this.getMessageById(Number(result.lastInsertRowid))!;
   }
 
   clearMessages(sessionId: string): void {
@@ -94,12 +92,11 @@ export class SessionManager {
 
   /**
    * Replace all messages for a session with a new set.
-   * Used after history compaction to persist the compacted version,
-   * avoiding repeated summarization on subsequent requests.
+   * Used by /reset commands. For compaction, prefer compactMessages().
    */
   replaceMessages(
     sessionId: string,
-    messages: Array<{ role: "user" | "assistant" | "system"; content: string }>,
+    messages: Array<{ role: "user" | "assistant" | "system"; content: string; type?: MessageType }>,
   ): void {
     const txn = this.db.transaction(() => {
       this.db
@@ -107,11 +104,61 @@ export class SessionManager {
         .run(sessionId);
 
       const insert = this.db.prepare(
-        `INSERT INTO messages (id, session_id, role, content) VALUES (?, ?, ?, ?)`,
+        `INSERT INTO messages (session_id, role, content, type) VALUES (?, ?, ?, ?)`,
       );
       for (const m of messages) {
-        insert.run(randomUUID(), sessionId, m.role, m.content);
+        insert.run(sessionId, m.role, m.content, m.type ?? "message");
       }
+    });
+    txn();
+  }
+
+  /**
+   * Incremental compaction: delete only the early messages and insert a summary.
+   * Recent messages keep their original IDs and timestamps.
+   *
+   * Strategy: reuse the lowest deleted ID for the summary message so that
+   * `ORDER BY id ASC` still produces the correct chronological order.
+   */
+  compactMessages(
+    sessionId: string,
+    keepCount: number,
+    summary: { role: "user" | "assistant" | "system"; content: string; type?: MessageType },
+  ): void {
+    const txn = this.db.transaction(() => {
+      const allRows = this.db
+        .prepare("SELECT id, created_at FROM messages WHERE session_id = ? ORDER BY id ASC")
+        .all(sessionId) as Array<{ id: number; created_at: string }>;
+
+      const total = allRows.length;
+      const cutoff = total - keepCount;
+      if (cutoff <= 0) return;
+
+      const earlyRows = allRows.slice(0, cutoff);
+      const lastEarly = earlyRows[earlyRows.length - 1];
+      const summaryId = lastEarly.id;
+      const summaryTimestamp = lastEarly.created_at;
+
+      // Delete early messages
+      const placeholders = earlyRows.map(() => "?").join(",");
+      this.db
+        .prepare(`DELETE FROM messages WHERE id IN (${placeholders})`)
+        .run(...earlyRows.map((r) => r.id));
+
+      // Insert summary at the position of the first deleted message
+      this.db
+        .prepare(
+          `INSERT INTO messages (id, session_id, role, content, type, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          summaryId,
+          sessionId,
+          summary.role,
+          summary.content,
+          summary.type ?? "summary",
+          summaryTimestamp,
+        );
     });
     txn();
   }
@@ -126,13 +173,13 @@ export class SessionManager {
   getMessages(sessionId: string): Message[] {
     const rows = this.db
       .prepare(
-        "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC",
+        "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC",
       )
       .all(sessionId) as any[];
     return rows.map((row) => this.mapMessageRow(row));
   }
 
-  private getMessageById(id: string): Message | null {
+  private getMessageById(id: number): Message | null {
     const row = this.db
       .prepare("SELECT * FROM messages WHERE id = ?")
       .get(id) as any;
@@ -159,7 +206,7 @@ export class SessionManager {
       sessionId: row.session_id,
       role: row.role,
       content: row.content,
-      toolCalls: row.tool_calls,
+      type: row.type ?? "message",
       createdAt: row.created_at,
     };
   }

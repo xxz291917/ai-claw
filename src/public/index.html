@@ -392,22 +392,15 @@ let authToken = localStorage.getItem("chat_token") || "";
 
 async function checkAuth() {
   try {
-    const headers = { "Content-Type": "application/json" };
+    const headers = {};
     if (authToken) headers["Authorization"] = "Bearer " + authToken;
 
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ message: "/status" }),
-    });
+    const res = await fetch("/api/chat", { headers });
 
     if (res.status === 401) {
       showAuthOverlay();
       return false;
     }
-
-    // Consume stream to avoid dangling connection
-    try { await res.text(); } catch {}
 
     if (authToken) {
       document.getElementById("auth-status").textContent = "Authenticated";
@@ -800,12 +793,7 @@ document.getElementById("token-submit").addEventListener("click", async () => {
 
   try {
     const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + token,
-      },
-      body: JSON.stringify({ message: "/status" }),
+      headers: { Authorization: "Bearer " + token },
     });
 
     if (res.status === 401) {
@@ -813,9 +801,6 @@ document.getElementById("token-submit").addEventListener("click", async () => {
       errorEl.textContent = "Invalid token";
       return;
     }
-
-    // Consume stream
-    try { await res.text(); } catch {}
 
     // Save and proceed
     authToken = token;

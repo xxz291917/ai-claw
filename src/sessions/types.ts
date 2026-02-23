@@ -10,11 +10,13 @@ export type Session = {
   lastActiveAt: string;
 };
 
+export type MessageType = "message" | "summary";
+
 export type Message = {
-  id: string;
+  id: number;
   sessionId: string;
   role: "user" | "assistant" | "system";
   content: string;
-  toolCalls: string | null;
+  type: MessageType;
   createdAt: string;
 };

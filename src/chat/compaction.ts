@@ -3,6 +3,7 @@ import { estimateHistoryTokens } from "./token-utils.js";
 type HistoryMessage = {
   role: "user" | "assistant" | "system";
   content: string;
+  type?: "message" | "summary";
 };
 
 export type SummarizeFn = (
@@ -40,8 +41,14 @@ export async function compactHistory(
 
   if (!messageThresholdHit && !tokenThresholdHit) return history;
 
-  // Keep 75% of max so there's headroom before next compaction triggers
-  const keep = Math.floor(max * 0.75);
+  // Dynamic keep ratio based on pressure level
+  const msgPressure = history.length / max;
+  const tokenPressure =
+    maxTokens > 0 ? estimateHistoryTokens(history) / maxTokens : 0;
+  const pressure = Math.max(msgPressure, tokenPressure);
+
+  const keepRatio = pressure > 2.0 ? 0.25 : pressure > 1.5 ? 0.5 : 0.75;
+  const keep = Math.floor(max * keepRatio);
   const cutoff = history.length - keep;
   if (cutoff <= 0) return history;
 
@@ -50,8 +57,9 @@ export async function compactHistory(
 
   console.log(
     `[compact] ${history.length} messages → trimming ${early.length} early, keeping ${recent.length} recent` +
+      ` (pressure=${pressure.toFixed(2)}, keep=${Math.round(keepRatio * 100)}%)` +
       (tokenThresholdHit
-        ? ` (token trigger: ~${estimateHistoryTokens(history)}/${maxTokens})`
+        ? ` (tokens: ~${estimateHistoryTokens(history)}/${maxTokens})`
         : ""),
   );
 
@@ -110,13 +118,13 @@ export async function compactHistory(
 
   if (summary) {
     return [
-      { role: "system", content: `${SUMMARY_PREFIX}${summary}` },
+      { role: "system", content: `${SUMMARY_PREFIX}${summary}`, type: "summary" },
       ...recent,
     ];
   }
 
   return [
-    { role: "system", content: `[Earlier ${early.length} messages omitted]` },
+    { role: "system", content: `[Earlier ${early.length} messages omitted]`, type: "summary" },
     ...recent,
   ];
 }

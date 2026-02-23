@@ -21,34 +21,9 @@ export function initDb(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_tasks_sentry_issue
       ON tasks(sentry_issue_id);
-  `);
 
-  // Migrate old schema: rename 'state' → 'status', drop removed columns
-  const cols = db.pragma("table_info(tasks)") as Array<{ name: string }>;
-  const colNames = cols.map((c) => c.name);
-  if (colNames.includes("state") && !colNames.includes("status")) {
-    db.exec("ALTER TABLE tasks RENAME COLUMN state TO status");
-  }
-  // Drop columns that no longer exist (SQLite 3.35+)
-  for (const old of ["type", "sentry_event_id", "analysis", "lark_message_id"]) {
-    if (colNames.includes(old)) {
-      db.exec(`ALTER TABLE tasks DROP COLUMN ${old}`);
-    }
-  }
-  // Drop old index if it exists
-  db.exec("DROP INDEX IF EXISTS idx_tasks_state");
-
-  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_status
       ON tasks(status);
-
-    CREATE TABLE IF NOT EXISTS audit_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id TEXT,
-      action TEXT NOT NULL,
-      detail TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
 
     CREATE TABLE IF NOT EXISTS event_log (
       id TEXT PRIMARY KEY,
@@ -78,11 +53,11 @@ export function initDb(db: Database.Database): void {
       ON sessions(user_id, status);
 
     CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
+      id INTEGER PRIMARY KEY,
       session_id TEXT NOT NULL REFERENCES sessions(id),
       role TEXT NOT NULL,
       content TEXT NOT NULL,
-      tool_calls TEXT,
+      type TEXT NOT NULL DEFAULT 'message',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -90,7 +65,7 @@ export function initDb(db: Database.Database): void {
       ON messages(session_id, created_at);
 
     CREATE TABLE IF NOT EXISTS memory (
-      id TEXT PRIMARY KEY,
+      id INTEGER PRIMARY KEY,
       user_id TEXT NOT NULL,
       category TEXT NOT NULL,
       key TEXT NOT NULL,
@@ -107,20 +82,20 @@ export function initDb(db: Database.Database): void {
 
     CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
       key, value,
-      content=memory, content_rowid=rowid
+      content=memory, content_rowid=id
     );
 
     CREATE TRIGGER IF NOT EXISTS memory_ai AFTER INSERT ON memory BEGIN
-      INSERT INTO memory_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+      INSERT INTO memory_fts(rowid, key, value) VALUES (new.id, new.key, new.value);
     END;
 
     CREATE TRIGGER IF NOT EXISTS memory_ad AFTER DELETE ON memory BEGIN
-      INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES ('delete', old.rowid, old.key, old.value);
+      INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES ('delete', old.id, old.key, old.value);
     END;
 
     CREATE TRIGGER IF NOT EXISTS memory_au AFTER UPDATE ON memory BEGIN
-      INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES ('delete', old.rowid, old.key, old.value);
-      INSERT INTO memory_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+      INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES ('delete', old.id, old.key, old.value);
+      INSERT INTO memory_fts(rowid, key, value) VALUES (new.id, new.key, new.value);
     END;
   `);
 }
