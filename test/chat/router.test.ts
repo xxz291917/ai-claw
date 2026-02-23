@@ -133,11 +133,13 @@ describe("chatRouter", () => {
     });
     await res.text(); // consume stream to ensure done handler runs
 
-    // Provider should receive full history (first msg + first reply + second msg)
-    expect(receivedHistory).toHaveLength(3);
-    expect(receivedHistory[0]).toMatchObject({ role: "user", content: "first msg" });
-    expect(receivedHistory[1]).toMatchObject({ role: "assistant", content: "first reply" });
-    expect(receivedHistory[2]).toMatchObject({ role: "user", content: "second msg" });
+    // Provider should receive: identity system msg + first msg + first reply + second msg
+    expect(receivedHistory).toHaveLength(4);
+    expect(receivedHistory[0]).toMatchObject({ role: "system" });
+    expect((receivedHistory[0] as any).content).toContain("当前用户");
+    expect(receivedHistory[1]).toMatchObject({ role: "user", content: "first msg" });
+    expect(receivedHistory[2]).toMatchObject({ role: "assistant", content: "first reply" });
+    expect(receivedHistory[3]).toMatchObject({ role: "user", content: "second msg" });
 
     // All 4 messages should be in DB
     const messages = sessionManager.getMessages(session.id);

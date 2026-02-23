@@ -17,7 +17,7 @@ export function createMemoryDeleteTool(
     description:
       "Delete a memory by its ID. Use this to remove outdated or duplicate memories. " +
       "Only memories belonging to the current user can be deleted. " +
-      "You can find memory IDs from memory_save results or from the memory context injected at conversation start.",
+      "You can find memory IDs from memory_list results, memory_save dedup hints, or from the memory context injected at conversation start.",
     parameters: {
       type: "object",
       properties: {

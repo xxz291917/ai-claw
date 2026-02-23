@@ -11,6 +11,7 @@ import { compactHistory } from "./compaction.js";
 import { extractMemories } from "../memory/extractor.js";
 import { createMemorySaveTool } from "../tools/memory-save.js";
 import { createMemoryDeleteTool } from "../tools/memory-delete.js";
+import { createMemoryListTool } from "../tools/memory-list.js";
 import type { RequestTool } from "./types.js";
 
 type ChatRouterDeps = {
@@ -79,6 +80,14 @@ export function chatRouter(
     // 1. Resolve or create session
     const userId = c.get("userId") ?? "web-anonymous";
     let session = sessionId ? sessionManager.getById(sessionId) : null;
+
+    // Don't reuse a session that belongs to a different user
+    // (e.g. old anonymous session after the user logs in with a token)
+    if (session && session.userId !== userId) {
+      console.log(`[chat] session ${session.id} belongs to ${session.userId}, not ${userId} — creating new`);
+      session = null;
+    }
+
     if (!session) {
       session = sessionManager.create({
         userId,
@@ -178,13 +187,16 @@ export function chatRouter(
         console.log(`[chat] history: ${history.length} messages, no compaction needed (${Date.now() - t0}ms)`);
       }
 
-      // 5c. Inject memories AFTER compaction — always present for LLM, never persisted
+      // 5c. Inject user identity + memories AFTER compaction — always present for LLM, never persisted
+      const identityParts: string[] = [];
+      identityParts.push(`当前用户: ${session.userId}`);
       if (memoryText) {
-        history.unshift({
-          role: "system",
-          content: `你了解该用户的以下信息:\n${memoryText}`,
-        });
+        identityParts.push(`你了解该用户的以下信息:\n${memoryText}`);
       }
+      history.unshift({
+        role: "system",
+        content: identityParts.join("\n\n"),
+      });
 
       // 5d. Build per-request tools (e.g. memory_save/memory_delete with userId baked in)
       const requestTools: RequestTool[] = [];
@@ -192,6 +204,7 @@ export function chatRouter(
         requestTools.push(
           createMemorySaveTool(memoryManager, session.userId, session.id),
           createMemoryDeleteTool(memoryManager, session.userId),
+          createMemoryListTool(memoryManager, session.userId),
         );
       }
 
