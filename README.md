@@ -50,6 +50,9 @@ Copy `.env.example` and configure as needed:
 | `SENTRY_AUTH_TOKEN` | Sentry API token | No |
 | `GH_TOKEN` | GitHub token | No |
 | `SKILLS_EXTRA_DIRS` | Extra skill directories (comma-separated) | No |
+| `LARK_APP_ID` | Lark (飞书) app ID | No |
+| `LARK_APP_SECRET` | Lark app secret | No |
+| `LARK_VERIFICATION_TOKEN` | Lark event verification token | No |
 
 ## Project Structure
 
@@ -61,6 +64,7 @@ src/
 ├── db.ts                 # SQLite client
 ├── core/                 # Event bus, audit log
 ├── chat/                 # Chat core (router, providers, system prompt, commands)
+├── lark/                 # Lark (飞书) bot integration
 ├── tools/                # Tool definitions (UnifiedToolDef)
 ├── skills/               # Built-in skills (Markdown)
 ├── memory/               # User memory (FTS5)
@@ -70,7 +74,7 @@ src/
 
 ## Tech Stack
 
-Node.js 22 · TypeScript 5.9 · Hono · SQLite (better-sqlite3, WAL) · Claude Agent SDK · Vitest
+Node.js 22 · TypeScript 5.9 · Hono · SQLite (better-sqlite3, WAL) · Claude Agent SDK · Lark SDK · Vitest
 
 ## Docs
 

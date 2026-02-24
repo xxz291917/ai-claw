@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Hub is an interactive **Chat Assistant** — a web-based chat interface with AI assistance. Supports both Claude Agent SDK and OpenAI-compatible API providers. Includes session persistence, user memory (FTS5), history compaction, per-session concurrency control, and per-request tools (memory save/delete with write-time dedup).
+AI Hub is an interactive **Chat Assistant** — a web-based chat interface with AI assistance. Supports both Claude Agent SDK and OpenAI-compatible API providers. Includes session persistence, user memory (FTS5), history compaction, per-session concurrency control, and per-request tools (memory save/delete with write-time dedup). Supports Lark (飞书) bot as an additional chat channel.
 
 Planned: expose `POST /api/agent` for general-purpose agent execution, with n8n as the orchestration layer.
 
@@ -36,7 +36,9 @@ npx vitest run test/tools/bash-exec.test.ts
 
 ## Architecture
 
-**Flow:** Web UI → POST `/api/chat` → auth → session → slash commands → history + memory → compactHistory → provider.stream() → SSE → save reply → EventLog audit
+**Flow (Web):** Web UI → POST `/api/chat` → auth → session → slash commands → `handleConversation()` → provider.stream() → SSE (via `onEvent`) → save reply → EventLog audit
+
+**Flow (Lark):** 飞书 webhook → POST `/api/lark/webhook` → dedup → fire-and-forget → send "思考中" card → `handleConversation()` → patch card with reply
 
 **Providers:**
 - `ClaudeProvider`: Uses Claude Agent SDK `query()` with MCP servers, supports session resume
@@ -53,7 +55,8 @@ npx vitest run test/tools/bash-exec.test.ts
 | `src/core/event-bus.ts` | `EventLog` — audit-only persistence, writes events to `event_log` table |
 | `src/core/hub-event.ts` | `HubEvent` type definition and `createHubEvent()` factory |
 | **Chat Assistant** | |
-| `src/chat/router.ts` | SSE-based chat endpoint (`POST /api/chat`) with session, memory, concurrency lock |
+| `src/chat/conversation.ts` | `handleConversation()` — core conversation logic shared by Web and Lark channels |
+| `src/chat/router.ts` | Web SSE adapter (`POST /api/chat`) — slash commands, heartbeat, delegates to `handleConversation()` |
 | `src/chat/claude-provider.ts` | Claude Agent SDK provider with MCP server integration + session resume |
 | `src/chat/generic-provider.ts` | OpenAI-compatible API provider with tool wrapping, token budget, compaction |
 | `src/chat/setup.ts` | `setupChatProvider()` — provider factory based on env config |
@@ -83,6 +86,9 @@ npx vitest run test/tools/bash-exec.test.ts
 | `src/sessions/manager.ts` | `SessionManager` — session CRUD, message append, provider session ID binding |
 | `src/memory/manager.ts` | `MemoryManager` — FTS5 full-text search (CJK prefix matching), per-request memory injection |
 | `src/memory/extractor.ts` | Extracts structured memories (preferences, decisions, facts) from conversations |
+| **Lark Bot** | |
+| `src/lark/client.ts` | Lark SDK wrapper, card send/patch helpers |
+| `src/lark/router.ts` | Webhook handler (`POST /api/lark/webhook`), event dedup, fire-and-forget processing |
 
 ## Conventions
 

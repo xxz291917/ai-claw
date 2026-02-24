@@ -36,6 +36,8 @@ export type ConversationRequest = {
   channelId: string;
   deps: ConversationDeps;
   abortSignal?: AbortSignal;
+  /** Optional callback invoked for each event as it arrives — enables real-time SSE streaming. */
+  onEvent?: (event: ChatEvent) => void | Promise<void>;
 };
 
 export type ConversationResult = {
@@ -211,6 +213,7 @@ export async function handleConversation(
         toolContext: { userId: session.userId, sessionId },
       })) {
         events.push(event);
+        await req.onEvent?.(event);
 
         if (event.type === "text") {
           assistantText += event.content;

@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { createDb } from "./db.js";
 import { loadEnv } from "./env.js";
 import { chatRouter } from "./chat/router.js";
+import { larkRouter } from "./lark/router.js";
+import { createLarkClient, sendCard, patchCard } from "./lark/client.js";
 import { parseChatUsers, chatAuthMiddleware } from "./chat/auth.js";
 import { setupChatProvider } from "./chat/setup.js";
 import { buildToolSuite } from "./tools/suite.js";
@@ -61,6 +63,22 @@ export function createApp(): {
     skillsDirs,
   });
 
+  // --- Lark Bot (optional) ---
+  if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
+    const larkClient = createLarkClient(env);
+    larkRouter(app, {
+      provider: chatProvider,
+      sessionManager,
+      eventLog,
+      memoryManager,
+      maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
+      sendCard: (chatId, markdown) => sendCard(larkClient, chatId, markdown),
+      patchCard: (messageId, markdown) => patchCard(larkClient, messageId, markdown),
+      verificationToken: env.LARK_VERIFICATION_TOKEN,
+    });
+    console.log("[init] Lark bot enabled");
+  }
+
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
 
@@ -78,6 +96,7 @@ AI Hub 服务已启动
   地址:     http://localhost:${info.port}
   健康检查: http://localhost:${info.port}/health
   Chat:     http://localhost:${info.port}/
+  Lark:     ${env.LARK_APP_ID ? "POST http://localhost:" + info.port + "/api/lark/webhook" : "(disabled)"}
 `);
   });
 }
