@@ -40,11 +40,11 @@ Copy `.env.example` and configure as needed:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `ANTHROPIC_API_KEY` | Claude API key | Yes (Claude provider) |
 | `CHAT_PROVIDER` | `claude` or `generic` | No, defaults to `claude` |
+| `ANTHROPIC_API_KEY` | Claude API key (when provider = `claude`) | One of these two |
+| `CHAT_API_KEY` | API key (when provider = `generic`) | is required |
 | `CHAT_MODEL` | Model name (generic provider) | Yes (generic) |
 | `CHAT_API_BASE` | API base URL (generic provider) | Yes (generic) |
-| `CHAT_API_KEY` | API key (generic provider) | Yes (generic) |
 | `WORKSPACE_DIR` | AI workspace directory | Yes |
 | `PORT` | Server port | No, defaults to `8080` |
 | `SENTRY_AUTH_TOKEN` | Sentry API token | No |
