@@ -27,7 +27,7 @@ export type GenericProviderConfig = {
 type Message =
   | { role: "system"; content: string }
   | { role: "user"; content: string }
-  | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
+  | { role: "assistant"; content: string | null; reasoning_content?: string | null; tool_calls?: ToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
 type ToolCall = {
@@ -166,6 +166,7 @@ export class GenericProvider implements ChatProvider {
       }
 
       let assistantContent = "";
+      let reasoningContent = "";
       const toolCalls: ToolCall[] = [];
       const toolCallArgs: Map<number, string> = new Map();
 
@@ -182,6 +183,10 @@ export class GenericProvider implements ChatProvider {
 
           const delta = data.choices?.[0]?.delta;
           if (!delta) continue;
+
+          if (delta.reasoning_content) {
+            reasoningContent += delta.reasoning_content;
+          }
 
           if (delta.content) {
             assistantContent += delta.content;
@@ -231,11 +236,15 @@ export class GenericProvider implements ChatProvider {
       }
       console.log(`[generic] ${toolCalls.filter(Boolean).length} tool calls: ${toolCalls.filter(Boolean).map(tc => tc.function.name).join(", ")} (${Date.now() - t0}ms)`);
 
-      messages.push({
+      const assistantMsg: Message = {
         role: "assistant",
         content: assistantContent || null,
         tool_calls: toolCalls.filter(Boolean),
-      });
+      };
+      if (reasoningContent) {
+        (assistantMsg as any).reasoning_content = reasoningContent;
+      }
+      messages.push(assistantMsg);
 
       for (const tc of toolCalls) {
         if (!tc) continue;
