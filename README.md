@@ -74,6 +74,5 @@ Node.js 22 · TypeScript 5.9 · Hono · SQLite (better-sqlite3, WAL) · Claude A
 
 ## Docs
 
-- [Introduction](docs/introduction.md) — Background, features, comparison, roadmap
 - [Architecture](docs/architecture.md)
 - [Problem & Solution](docs/Solution%20for%20Engineers%20cannot%20focus%20on%20high-value%20%20303c2345ab46807b8154ed52adfcebaa.md)
