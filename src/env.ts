@@ -39,6 +39,12 @@ const envSchema = z.object({
   CHAT_FETCH_TIMEOUT: z.coerce.number().default(120),
   /** Max estimated tokens before triggering history compaction. 0 = disabled (message count only). */
   CHAT_MAX_HISTORY_TOKENS: z.coerce.number().default(0),
+
+  // Lark bot (optional — enables POST /api/lark/webhook)
+  LARK_APP_ID: z.string().optional(),
+  LARK_APP_SECRET: z.string().optional(),
+  LARK_VERIFICATION_TOKEN: z.string().optional(),
+  LARK_ENCRYPT_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
