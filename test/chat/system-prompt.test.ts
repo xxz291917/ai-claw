@@ -13,7 +13,7 @@ describe("buildSystemPrompt", () => {
       skillsDirs: [resolve(projectRoot, "src/skills")],
     });
 
-    expect(prompt).toContain("AI Hub Assistant");
+    expect(prompt).toContain("AI Claw Assistant");
     expect(prompt).toContain("Chat Assistant");
   });
 

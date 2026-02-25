@@ -1,7 +1,7 @@
 {
-  "name": "ai-hub",
+  "name": "ai-claw",
   "version": "1.0.0",
-  "description": "AI Hub - AI-driven fault healing and requirement delivery",
+  "description": "AI Claw - AI engine for chat assistance, tool execution, and agent orchestration",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",

@@ -98,8 +98,8 @@ export function buildToolSuite(
   const { mcpTools, genericTools, descriptions } = registerTools(toolDefs);
 
   const mcpServers = {
-    "ai-hub-tools": createSdkMcpServer({
-      name: "ai-hub-tools",
+    "ai-claw-tools": createSdkMcpServer({
+      name: "ai-claw-tools",
       tools: mcpTools,
     }),
   };

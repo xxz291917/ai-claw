@@ -30,7 +30,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const absoluteWorkspace = resolve(ctx.workspaceDir);
 
   // --- 1. Identity + Personality + Runtime ---
-  sections.push(`You are AI Hub Assistant, an AI engineering assistant.
+  sections.push(`You are AI Claw Assistant, an AI engineering assistant.
 You help with software engineering tasks: writing code, debugging, running commands, querying APIs, and project management.
 
 Workspace: ${absoluteWorkspace} | Time: ${new Date().toISOString()} | Platform: ${process.platform} ${process.arch}

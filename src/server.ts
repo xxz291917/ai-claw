@@ -26,7 +26,7 @@ export function createApp(): {
   eventLog: EventLog;
 } {
   const env = loadEnv();
-  const db = createDb(resolve("data/ai-hub.db"));
+  const db = createDb(resolve("data/ai-claw.db"));
   const eventLog = new EventLog(db);
   const sessionManager = new SessionManager(db);
   const memoryManager = new MemoryManager(db);
@@ -105,7 +105,7 @@ export function startServer() {
 
   serve({ fetch: app.fetch, port: env.PORT }, (info) => {
     console.log(`
-AI Hub 服务已启动
+AI Claw 服务已启动
 
   地址:     http://localhost:${info.port}
   健康检查: http://localhost:${info.port}/health

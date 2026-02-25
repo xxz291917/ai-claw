@@ -1,6 +1,6 @@
-# AI Hub
+# AI Claw
 
-Company-level AI assistant platform. Multi-user, extensible, integrable.
+Company-level AI engine. Multi-user, extensible, integrable.
 
 See [docs/introduction.md](docs/introduction.md) for full details.
 

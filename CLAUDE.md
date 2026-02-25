@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Hub is an interactive **Chat Assistant** — a web-based chat interface with AI assistance. Supports both Claude Agent SDK and OpenAI-compatible API providers. Includes session persistence, user memory (FTS5), history compaction, per-session concurrency control, and per-request tools (memory save/delete with write-time dedup). Supports Lark (飞书) bot as an additional chat channel.
+AI Claw is an interactive **Chat Assistant** — a web-based chat interface with AI assistance. Supports both Claude Agent SDK and OpenAI-compatible API providers. Includes session persistence, user memory (FTS5), history compaction, per-session concurrency control, and per-request tools (memory save/delete with write-time dedup). Supports Lark (飞书) bot as an additional chat channel.
 
 Planned: expose `POST /api/agent` for general-purpose agent execution, with n8n as the orchestration layer.
 

@@ -12,7 +12,7 @@ describe("buildToolSuite", () => {
   it("includes base tools (get_skill, web_fetch, claude_code)", () => {
     const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs);
 
-    expect(result.mcpServers["ai-hub-tools"]).toBeDefined();
+    expect(result.mcpServers["ai-claw-tools"]).toBeDefined();
     expect(result.descriptions.length).toBeGreaterThanOrEqual(3);
     expect(result.descriptions.some((d) => d.includes("get_skill"))).toBe(true);
     expect(result.descriptions.some((d) => d.includes("web_fetch"))).toBe(true);
