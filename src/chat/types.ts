@@ -16,6 +16,8 @@ export type ChatRequest = {
   message: string;
   sessionId?: string;
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  /** Dynamic system prompt addition (user identity + memories) for native context providers. */
+  systemPromptAddition?: string;
   abortSignal?: AbortSignal;
   /** Per-request context for tools that need user/session identity. */
   toolContext?: ToolContext;
@@ -23,6 +25,9 @@ export type ChatRequest = {
 
 export interface ChatProvider {
   readonly name: string;
+  /** When true, the provider manages its own conversation context (e.g. Claude Agent SDK resume).
+   *  handleConversation will skip history loading/compaction and pass context via systemPromptAddition. */
+  readonly usesNativeContext?: boolean;
   stream(req: ChatRequest): AsyncIterable<ChatEvent>;
   summarize?(messages: Array<{ role: string; content: string }>): Promise<string>;
 }

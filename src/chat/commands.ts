@@ -3,6 +3,7 @@ import type { ChatEvent } from "./types.js";
 import type { Session } from "../sessions/types.js";
 import { installSkill, uninstallSkill, searchSkills } from "./clawhub.js";
 import { scanSkillDirs } from "../skills/loader.js";
+import { formatMissingReason } from "../skills/eligibility.js";
 
 export type CommandContext = {
   session: Session;
@@ -117,13 +118,30 @@ function handleSkills(ctx: CommandContext): CommandResult {
   if (skills.length === 0) {
     return textResult(ctx.session.id, "No skills installed.");
   }
-  const lines = skills.map(
-    (s) => `- **${s.name}**: ${s.description}`,
-  );
-  return textResult(
-    ctx.session.id,
-    `Available skills (${skills.length}):\n\n${lines.join("\n")}\n\nUse \`/search <query>\` to find more on ClawHub.`,
-  );
+
+  const available = skills.filter((s) => s.eligibility.eligible);
+  const unavailable = skills.filter((s) => !s.eligibility.eligible);
+  const lines: string[] = [];
+
+  if (available.length > 0) {
+    lines.push(`**Available skills (${available.length}):**\n`);
+    for (const s of available) {
+      const tagStr = s.tags?.length ? ` [${s.tags.join(", ")}]` : "";
+      lines.push(`- **${s.name}**: ${s.description}${tagStr}`);
+    }
+  }
+
+  if (unavailable.length > 0) {
+    if (available.length > 0) lines.push("");
+    lines.push(`**Unavailable skills (${unavailable.length}):**\n`);
+    for (const s of unavailable) {
+      lines.push(`- **${s.name}**: ${formatMissingReason(s.eligibility)}`);
+    }
+  }
+
+  lines.push("", `Use \`/search <query>\` to find more on ClawHub.`);
+
+  return textResult(ctx.session.id, lines.join("\n"));
 }
 
 function handleHelp(ctx: CommandContext): CommandResult {

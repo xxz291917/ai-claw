@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
 import { scanSkillDirs, type SkillEntry } from "../skills/loader.js";
+import { formatMissingReason } from "../skills/eligibility.js";
 import type { UnifiedToolDef } from "./types.js";
 
 /**
@@ -20,7 +21,7 @@ export function createSkillReaderTool(skillsDirs: string[]): UnifiedToolDef {
     description:
       "Load the full instructions for a skill by name. " +
       "Use this when the user's task matches one of the available skills listed in your system prompt. " +
-      `Available skills: ${initialScan.map((s) => s.name).join(", ") || "none"}`,
+      `Available skills: ${initialScan.filter((s) => s.eligibility.eligible).map((s) => s.name).join(", ") || "none"}`,
     inputSchema: {
       skill_name: z
         .string()
@@ -43,12 +44,24 @@ export function createSkillReaderTool(skillsDirs: string[]): UnifiedToolDef {
         try {
           const content = readFileSync(entry.filePath, "utf-8");
           const skillDir = dirname(entry.filePath);
-          return (
-            `[Skill directory: ${skillDir}]\n` +
+
+          const parts: string[] = [];
+
+          // Warn if skill has unmet dependencies
+          if (!entry.eligibility.eligible) {
+            parts.push(
+              `[WARNING: This skill has unmet dependencies: ${formatMissingReason(entry.eligibility)}. It may not work correctly.]`,
+            );
+          }
+
+          parts.push(
+            `[Skill directory: ${skillDir}]`,
             `[IMPORTANT: When executing files from this skill, use absolute paths. ` +
-            `For example: node ${skillDir}/index.js or bash_exec with cwd=${skillDir}]\n\n` +
-            content
+              `For example: node ${skillDir}/index.js or bash_exec with cwd=${skillDir}]`,
+            "",
+            content,
           );
+          return parts.join("\n");
         } catch {
           // fall through to error
         }

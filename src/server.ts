@@ -11,6 +11,8 @@ import { createLarkClient, sendCard, patchCard } from "./lark/client.js";
 import { parseChatUsers, chatAuthMiddleware } from "./chat/auth.js";
 import { setupChatProvider } from "./chat/setup.js";
 import { buildToolSuite } from "./tools/suite.js";
+import { scanSkillDirs } from "./skills/loader.js";
+import { formatMissingReason } from "./skills/eligibility.js";
 import { EventLog } from "./core/event-bus.js";
 import { SessionManager } from "./sessions/manager.js";
 import { MemoryManager } from "./memory/manager.js";
@@ -49,6 +51,18 @@ export function createApp(): {
       .filter(Boolean)
       .map((d) => resolve(d)),
   ];
+
+  // --- Skill Eligibility ---
+  const allSkills = scanSkillDirs(skillsDirs);
+  const eligibleSkills = allSkills.filter((s) => s.eligibility.eligible);
+  const skippedSkills = allSkills.filter((s) => !s.eligibility.eligible);
+  console.log(`[init] Skills: ${eligibleSkills.length} available, ${skippedSkills.length} skipped`);
+  for (const s of eligibleSkills) {
+    console.log(`[init]   + ${s.name}`);
+  }
+  for (const s of skippedSkills) {
+    console.log(`[init]   - ${s.name} (${formatMissingReason(s.eligibility)})`);
+  }
 
   // --- Tool Suite ---
   const toolSuite = buildToolSuite(env, skillsDirs, memoryManager);

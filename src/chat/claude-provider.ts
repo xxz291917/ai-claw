@@ -1,5 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { ChatProvider, ChatEvent, ChatRequest } from "./types.js";
+import { toolRequestContext } from "../tools/request-context.js";
 
 export type ClaudeProviderConfig = {
   workspaceDir: string;
@@ -12,11 +13,18 @@ export type ClaudeProviderConfig = {
 
 export class ClaudeProvider implements ChatProvider {
   readonly name = "claude";
+  readonly usesNativeContext = true;
 
   constructor(private config: ClaudeProviderConfig) {}
 
   async *stream(req: ChatRequest): AsyncIterable<ChatEvent> {
     const t0 = Date.now();
+
+    // Propagate per-request ToolContext to MCP handlers via AsyncLocalStorage.
+    // enterWith() is safe here: each HTTP request runs in an isolated async context
+    // tree created by Node.js's HTTP server, so concurrent requests never share state.
+    toolRequestContext.enterWith(req.toolContext ?? { userId: "", sessionId: "" });
+
     const abortController = new AbortController();
 
     // Abort SDK query when client disconnects
@@ -26,11 +34,16 @@ export class ClaudeProvider implements ChatProvider {
 
     console.log(`[claude] query() start — resume=${req.sessionId ?? "(new)"} maxTurns=${this.config.maxTurns ?? 30}`);
 
+    // handleConversation() always supplies systemPromptAddition (user identity + memories).
+    const systemPrompt = req.systemPromptAddition
+      ? `${this.config.skillContent}\n\n${req.systemPromptAddition}`
+      : this.config.skillContent;
+
     const q = query({
       prompt: req.message,
       options: {
         cwd: this.config.workspaceDir,
-        systemPrompt: this.config.skillContent,
+        systemPrompt,
         tools: { type: "preset", preset: "claude_code" },
         mcpServers: this.config.mcpServers as any,
         permissionMode: "bypassPermissions",

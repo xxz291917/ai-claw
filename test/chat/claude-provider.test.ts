@@ -9,4 +9,13 @@ describe("ClaudeProvider", () => {
     });
     expect(provider.name).toBe("claude");
   });
+
+  it("should set usesNativeContext to true", async () => {
+    const { ClaudeProvider } = await import("../../src/chat/claude-provider.js");
+    const provider = new ClaudeProvider({
+      workspaceDir: "/tmp/test",
+      skillContent: "You are a helpful assistant.",
+    });
+    expect(provider.usesNativeContext).toBe(true);
+  });
 });

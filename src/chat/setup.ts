@@ -11,6 +11,7 @@ import { ClaudeProvider } from "./claude-provider.js";
 import { GenericProvider } from "./generic-provider.js";
 import type { ChatProvider } from "./types.js";
 import type { MemoryManager } from "../memory/manager.js";
+import { scanSkillDirs, filterEligibleSkills } from "../skills/loader.js";
 
 export type ChatSetupEnv = ToolSuiteEnv & {
   CHAT_PROVIDER?: string;
@@ -20,7 +21,6 @@ export type ChatSetupEnv = ToolSuiteEnv & {
   CHAT_MAX_TOOL_RESULT_CHARS?: number;
   CHAT_MAX_CONTEXT_TOKENS?: number;
   CHAT_FETCH_TIMEOUT?: number;
-  GH_TOKEN?: string;
 };
 
 export type ChatSetupResult = {
@@ -65,10 +65,28 @@ export function setupChatProvider(
     provider = new ClaudeProvider({
       workspaceDir: env.WORKSPACE_DIR,
       skillContent: systemPrompt,
-      env: env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {},
+      env: collectSkillEnv(skillsDirs),
       mcpServers: suite.mcpServers,
     });
   }
 
   return { provider, mcpServers: suite.mcpServers };
+}
+
+/**
+ * Collect env vars required by eligible skills from process.env.
+ * Used to forward skill-specific API keys to ClaudeProvider's subprocess.
+ */
+function collectSkillEnv(skillsDirs: string[]): Record<string, string> {
+  const skills = filterEligibleSkills(scanSkillDirs(skillsDirs));
+  const env: Record<string, string> = {};
+  for (const skill of skills) {
+    for (const key of skill.requirements.env) {
+      const value = process.env[key];
+      if (value && !env[key]) {
+        env[key] = value;
+      }
+    }
+  }
+  return env;
 }

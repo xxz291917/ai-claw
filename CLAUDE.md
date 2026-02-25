@@ -79,9 +79,10 @@ npx vitest run test/tools/bash-exec.test.ts
 | `src/tools/file-tools.ts` | `file_read` + `file_write` with `safePath()` sandbox validation |
 | `src/tools/skill-reader.ts` | `get_skill` tool — on-demand skill content loading |
 | **Skills** | |
-| `src/skills/*.md` | Markdown skills with YAML frontmatter (name, description, tags, allowed-tools) |
-| `src/skills/loader.ts` | `scanSkillDirs()` — multi-dir scanner, supports flat `*.md` + ClawHub `<name>/SKILL.md` format |
+| `src/skills/*.md` | Markdown skills with YAML frontmatter (name, description, tags, allowed-tools, requires-env, requires-bins) |
+| `src/skills/loader.ts` | `scanSkillDirs()` — multi-dir scanner with eligibility checking, supports flat `*.md` + ClawHub `<name>/SKILL.md` format |
 | `src/skills/frontmatter.ts` | `parseSkillFrontmatter()` — parses skill YAML frontmatter |
+| `src/skills/eligibility.ts` | `checkEligibility()` — validates skill env/binary dependencies, filters unavailable skills |
 | **Sessions & Memory** | |
 | `src/sessions/manager.ts` | `SessionManager` — session CRUD, message append, provider session ID binding |
 | `src/memory/manager.ts` | `MemoryManager` — FTS5 full-text search (CJK prefix matching), per-request memory injection |

@@ -7,6 +7,12 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, basename } from "node:path";
 import { parseSkillFrontmatter } from "./frontmatter.js";
+import {
+  extractRequirements,
+  checkEligibility,
+  type SkillRequirements,
+  type EligibilityResult,
+} from "./eligibility.js";
 
 export type SkillEntry = {
   /** Skill identifier (from frontmatter name or filename/dirname). */
@@ -17,7 +23,16 @@ export type SkillEntry = {
   tags?: string[];
   /** Absolute path to the .md file (for on-demand reading). */
   filePath: string;
+  /** Declared env/bin dependencies. */
+  requirements: SkillRequirements;
+  /** Whether dependencies are satisfied in the current environment. */
+  eligibility: EligibilityResult;
 };
+
+/** Return only eligible skills from the full list. */
+export function filterEligibleSkills(skills: SkillEntry[]): SkillEntry[] {
+  return skills.filter((s) => s.eligibility.eligible);
+}
 
 /**
  * Scan multiple directories for skills. Supports two formats:
@@ -104,11 +119,16 @@ function parseSkillFile(
         .trim() ??
       name;
 
+    const requirements = extractRequirements(metadata);
+    const eligibility = checkEligibility(requirements);
+
     return {
       name,
       description,
       tags: metadata?.tags,
       filePath,
+      requirements,
+      eligibility,
     };
   } catch {
     return null;

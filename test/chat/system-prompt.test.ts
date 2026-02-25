@@ -24,7 +24,8 @@ describe("buildSystemPrompt", () => {
     });
 
     expect(prompt).toContain("Skills (mandatory)");
-    expect(prompt).toContain("github");
+    // Check for a skill with no requirements (always eligible)
+    expect(prompt).toContain("weather");
     expect(prompt).toContain("get_skill");
   });
 

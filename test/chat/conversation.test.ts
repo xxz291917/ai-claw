@@ -229,6 +229,82 @@ describe("handleConversation", () => {
     expect(session!.providerSessionId).toBe("claude-sdk-session-123");
   });
 
+  it("skips history injection for native context providers", async () => {
+    const db = createTestDb();
+    const sessionManager = new SessionManager(db);
+    const eventLog = new EventLog(db);
+
+    // Create session with existing history
+    const session = sessionManager.create({
+      userId: "user-1",
+      channel: "test",
+      channelId: "ch-1",
+      provider: "test",
+    });
+    sessionManager.appendMessage(session.id, { role: "user", content: "old msg" });
+    sessionManager.appendMessage(session.id, { role: "assistant", content: "old reply" });
+
+    let receivedRequest: { history?: unknown; systemPromptAddition?: string } = {};
+    const provider: ChatProvider = {
+      name: "test",
+      usesNativeContext: true,
+      async *stream(req) {
+        receivedRequest = { history: req.history, systemPromptAddition: req.systemPromptAddition };
+        yield { type: "text", content: "ok" };
+        yield { type: "done", sessionId: "", costUsd: 0 };
+      },
+    };
+
+    await handleConversation({
+      userId: "user-1",
+      message: "new msg",
+      sessionId: session.id,
+      channel: "test",
+      channelId: "ch-1",
+      deps: { provider, sessionManager, eventLog },
+    });
+
+    // Native context providers should NOT receive history
+    expect(receivedRequest.history).toBeUndefined();
+
+    // Should receive user identity in systemPromptAddition
+    expect(receivedRequest.systemPromptAddition).toContain("user-1");
+  });
+
+  it("passes memories via systemPromptAddition for native context providers", async () => {
+    const db = createTestDb();
+    const sessionManager = new SessionManager(db);
+    const eventLog = new EventLog(db);
+    const memoryManager = new MemoryManager(db);
+
+    memoryManager.save("user-1", [
+      { category: "preference", key: "语言", value: "中文" },
+    ]);
+
+    let receivedAddition = "";
+    const provider: ChatProvider = {
+      name: "test",
+      usesNativeContext: true,
+      async *stream(req) {
+        receivedAddition = req.systemPromptAddition ?? "";
+        yield { type: "text", content: "ok" };
+        yield { type: "done", sessionId: "", costUsd: 0 };
+      },
+    };
+
+    await handleConversation({
+      userId: "user-1",
+      message: "我的 语言 偏好是什么",
+      channel: "test",
+      channelId: "ch-1",
+      deps: { provider, sessionManager, eventLog, memoryManager },
+    });
+
+    // Memory should be in systemPromptAddition, not history
+    expect(receivedAddition).toContain("语言");
+    expect(receivedAddition).toContain("中文");
+  });
+
   it("enforces per-session concurrency", async () => {
     const db = createTestDb();
     const sessionManager = new SessionManager(db);

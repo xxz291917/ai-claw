@@ -78,7 +78,8 @@ Put internal reasoning inside \`<think>...</think>\` tags. Only text outside is 
 - Use markdown formatting. Show command output in fenced code blocks.`);
 
   // --- 5. Skills (mandatory selection flow) ---
-  const skills = scanSkillDirs(ctx.skillsDirs);
+  // Only include eligible skills (dependencies satisfied) in system prompt
+  const skills = scanSkillDirs(ctx.skillsDirs).filter((s) => s.eligibility.eligible);
   if (skills.length > 0) {
     const skillList = skills
       .map((s) => {

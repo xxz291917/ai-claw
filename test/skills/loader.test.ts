@@ -128,6 +128,36 @@ describe("scanSkillDirs", () => {
     expect(entries).toEqual([]);
   });
 
+  it("marks skills without requires as eligible", () => {
+    const entries = scanSkillDirs([flatDir]);
+    const weather = entries.find((e) => e.name === "weather")!;
+    expect(weather.requirements).toEqual({ env: [], bins: [] });
+    expect(weather.eligibility.eligible).toBe(true);
+  });
+
+  it("marks skills with missing env as ineligible", () => {
+    const reqDir = resolve(tmp, "requires-test");
+    mkdirSync(reqDir, { recursive: true });
+    writeFileSync(
+      resolve(reqDir, "needs-key.md"),
+      `---\nname: needs-key\nrequires-env: [NONEXISTENT_KEY_XYZ_TEST]\n---\n# Needs Key`,
+    );
+    const entries = scanSkillDirs([reqDir]);
+    const skill = entries.find((e) => e.name === "needs-key")!;
+    expect(skill.eligibility.eligible).toBe(false);
+    expect(skill.eligibility.missingEnv).toContain("NONEXISTENT_KEY_XYZ_TEST");
+  });
+
+  it("populates requirements and eligibility on all entries", () => {
+    const entries = scanSkillDirs([flatDir]);
+    for (const entry of entries) {
+      expect(entry).toHaveProperty("requirements");
+      expect(entry).toHaveProperty("eligibility");
+      expect(entry.requirements).toHaveProperty("env");
+      expect(entry.requirements).toHaveProperty("bins");
+    }
+  });
+
   it("falls back to dirname/filename when no frontmatter name", () => {
     const noMeta = resolve(tmp, "nometa");
     mkdirSync(noMeta, { recursive: true });

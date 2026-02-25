@@ -3,6 +3,7 @@ name: notion
 description: "Notion API for creating and managing pages, databases, and blocks. Use when working with Notion content."
 tags: [notion, knowledge-base, productivity]
 allowed-tools: Bash
+requires-env: [NOTION_API_KEY]
 ---
 
 # Notion

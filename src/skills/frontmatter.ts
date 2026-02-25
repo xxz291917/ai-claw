@@ -2,7 +2,8 @@
  * Skill frontmatter parser (Claude Code compatible format).
  *
  * Parses YAML frontmatter from skill markdown files without external dependencies.
- * Supports: name, description, tags, allowed-tools, user-invocable, disable-model-invocation.
+ * Supports: name, description, tags, allowed-tools, user-invocable, disable-model-invocation,
+ * requires-env, requires-bins.
  */
 
 export type SkillMetadata = {
@@ -12,6 +13,10 @@ export type SkillMetadata = {
   "allowed-tools"?: string;
   "user-invocable"?: boolean;
   "disable-model-invocation"?: boolean;
+  /** Environment variables required by this skill (e.g. ["NOTION_API_KEY"]). */
+  "requires-env"?: string[] | string;
+  /** Binaries required on PATH (e.g. ["gh", "curl"]). */
+  "requires-bins"?: string[] | string;
 };
 
 export type ParsedSkill = {

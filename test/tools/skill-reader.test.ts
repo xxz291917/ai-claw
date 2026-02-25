@@ -32,6 +32,15 @@ afterAll(() => {
 describe("createSkillReaderTool", () => {
   it("should return full skill content for a builtin skill", async () => {
     const tool = createSkillReaderTool([builtinDir]);
+    // weather has no requirements, always eligible
+    const text = await tool.execute({ skill_name: "weather" }, ctx);
+    expect(text).toContain("weather");
+    expect(text).not.toContain("Error:");
+  });
+
+  it("should still load ineligible skills with a warning", async () => {
+    const tool = createSkillReaderTool([builtinDir]);
+    // github requires GH_TOKEN/gh — may be ineligible in test env
     const text = await tool.execute({ skill_name: "github" }, ctx);
     expect(text).toContain("GitHub");
     expect(text).not.toContain("Error:");
@@ -42,16 +51,17 @@ describe("createSkillReaderTool", () => {
     const text = await tool.execute({ skill_name: "nonexistent" }, ctx);
     expect(text).toContain("Error:");
     expect(text).toContain("not found");
-    expect(text).toContain("github");
   });
 
-  it("should list available skills in description", () => {
+  it("should list eligible skills in description", () => {
     const tool = createSkillReaderTool([builtinDir]);
-    expect(tool.description).toContain("github");
+    // weather has no requirements — always in description
+    expect(tool.description).toContain("weather");
   });
 
   it("should discover ClawHub directory-format skills", async () => {
     const tool = createSkillReaderTool([builtinDir, tmpExtra]);
+    // test-claw-skill has no requirements — always eligible
     expect(tool.description).toContain("test-claw-skill");
 
     const text = await tool.execute({ skill_name: "test-claw-skill" }, ctx);
@@ -61,7 +71,8 @@ describe("createSkillReaderTool", () => {
 
   it("should merge skills from multiple directories", () => {
     const tool = createSkillReaderTool([builtinDir, tmpExtra]);
-    expect(tool.description).toContain("github");
+    // Check skills without requirements appear in description
+    expect(tool.description).toContain("weather");
     expect(tool.description).toContain("test-claw-skill");
   });
 });

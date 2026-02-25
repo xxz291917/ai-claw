@@ -122,15 +122,7 @@ export async function handleConversation(
       content: message,
     });
 
-    // 4. Load and compact history
-    const rawHistory = sessionManager.getMessages(sessionId).map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    console.log(`[conversation] history: ${rawHistory.length} messages`);
-
-    // 4a. Search relevant memories
+    // 4. Build per-request context (user identity + memories)
     let memoryText: string | null = null;
     if (memoryManager) {
       try {
@@ -146,55 +138,74 @@ export async function handleConversation(
       }
     }
 
-    // 4b. Build memoryFlush callback
-    const memoryFlush: MemoryFlushFn | undefined =
-      memoryManager && provider.summarize
-        ? async (early) => {
-            const existing = memoryManager.getByUser(session.userId);
-            const items = await extractMemories(
-              early,
-              (prompt) =>
-                provider.summarize!(
-                  [{ role: "user", content: prompt }],
-                ),
-              existing,
-            );
-            if (items.length > 0) {
-              memoryManager.save(session.userId, items, sessionId);
-            }
-          }
-        : undefined;
-
-    const history = await compactHistory(rawHistory, {
-      maxMessages: maxHistoryMessages,
-      maxTokens: maxHistoryTokens,
-      summarize: provider.summarize?.bind(provider),
-      memoryFlush,
-    });
-
-    // Persist compacted history so subsequent requests don't re-summarize
-    if (history.length < rawHistory.length) {
-      const keepCount = history.length - 1; // exclude the summary message
-      console.log(
-        `[conversation] compacted ${rawHistory.length} → ${history.length} messages (keep=${keepCount}), persisting (${Date.now() - t0}ms)`,
-      );
-      sessionManager.compactMessages(sessionId, keepCount, history[0]);
-    } else {
-      console.log(
-        `[conversation] history: ${history.length} messages, no compaction needed (${Date.now() - t0}ms)`,
-      );
-    }
-
-    // 4c. Inject user identity + memories AFTER compaction — always present for LLM, never persisted
     const identityParts: string[] = [];
     identityParts.push(`当前用户: ${session.userId}`);
     if (memoryText) {
       identityParts.push(`你了解该用户的以下信息:\n${memoryText}`);
     }
-    history.unshift({
-      role: "system",
-      content: identityParts.join("\n\n"),
-    });
+    const systemPromptAddition = identityParts.join("\n\n");
+
+    // 4a. Native context providers (e.g. ClaudeProvider with SDK resume) manage their own history.
+    //     Skip history loading/compaction — pass context via systemPromptAddition only.
+    let history: Array<{ role: "user" | "assistant" | "system"; content: string }> | undefined;
+
+    if (!provider.usesNativeContext) {
+      const rawHistory = sessionManager.getMessages(sessionId).map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      console.log(`[conversation] history: ${rawHistory.length} messages`);
+
+      // Build memoryFlush callback for compaction
+      const memoryFlush: MemoryFlushFn | undefined =
+        memoryManager && provider.summarize
+          ? async (early) => {
+              const existing = memoryManager.getByUser(session.userId);
+              const items = await extractMemories(
+                early,
+                (prompt) =>
+                  provider.summarize!(
+                    [{ role: "user", content: prompt }],
+                  ),
+                existing,
+              );
+              if (items.length > 0) {
+                memoryManager.save(session.userId, items, sessionId);
+              }
+            }
+          : undefined;
+
+      const compacted = await compactHistory(rawHistory, {
+        maxMessages: maxHistoryMessages,
+        maxTokens: maxHistoryTokens,
+        summarize: provider.summarize?.bind(provider),
+        memoryFlush,
+      });
+
+      // Persist compacted history so subsequent requests don't re-summarize
+      if (compacted.length < rawHistory.length) {
+        const keepCount = compacted.length - 1; // exclude the summary message
+        console.log(
+          `[conversation] compacted ${rawHistory.length} → ${compacted.length} messages (keep=${keepCount}), persisting (${Date.now() - t0}ms)`,
+        );
+        sessionManager.compactMessages(sessionId, keepCount, compacted[0]);
+      } else {
+        console.log(
+          `[conversation] history: ${compacted.length} messages, no compaction needed (${Date.now() - t0}ms)`,
+        );
+      }
+
+      // Inject user identity + memories as system message — never persisted
+      compacted.unshift({
+        role: "system",
+        content: systemPromptAddition,
+      });
+
+      history = compacted;
+    } else {
+      console.log(`[conversation] native context provider — skipping history (${Date.now() - t0}ms)`);
+    }
 
     // 5. Stream from provider — collect ALL events
     let assistantText = "";
@@ -209,6 +220,7 @@ export async function handleConversation(
         message,
         sessionId: session.providerSessionId ?? undefined,
         history,
+        systemPromptAddition,
         abortSignal,
         toolContext: { userId: session.userId, sessionId },
       })) {

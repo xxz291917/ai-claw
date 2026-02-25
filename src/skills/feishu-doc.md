@@ -3,6 +3,7 @@ name: feishu-doc
 description: "Feishu (Lark) document read/write operations. Use when user mentions Feishu docs, cloud docs, or docx links."
 tags: [feishu, lark, documentation]
 allowed-tools: Bash
+requires-env: [LARK_APP_ID, LARK_APP_SECRET]
 ---
 
 # Feishu Document Operations

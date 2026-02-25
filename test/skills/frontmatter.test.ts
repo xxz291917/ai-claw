@@ -78,6 +78,52 @@ Body`;
     expect(metadata!.tags).toEqual(["tag one", "tag two", "simple"]);
   });
 
+  it("should parse requires-env as array", () => {
+    const content = `---
+name: notion
+requires-env: [NOTION_API_KEY]
+---
+Body`;
+
+    const { metadata } = parseSkillFrontmatter(content);
+    expect(metadata!["requires-env"]).toEqual(["NOTION_API_KEY"]);
+  });
+
+  it("should parse requires-env as string", () => {
+    const content = `---
+name: github
+requires-env: GH_TOKEN
+---
+Body`;
+
+    const { metadata } = parseSkillFrontmatter(content);
+    expect(metadata!["requires-env"]).toBe("GH_TOKEN");
+  });
+
+  it("should parse requires-bins as array", () => {
+    const content = `---
+name: github
+requires-bins: [gh, git]
+---
+Body`;
+
+    const { metadata } = parseSkillFrontmatter(content);
+    expect(metadata!["requires-bins"]).toEqual(["gh", "git"]);
+  });
+
+  it("should parse multiple requires fields together", () => {
+    const content = `---
+name: github
+requires-env: [GH_TOKEN]
+requires-bins: [gh]
+---
+Body`;
+
+    const { metadata } = parseSkillFrontmatter(content);
+    expect(metadata!["requires-env"]).toEqual(["GH_TOKEN"]);
+    expect(metadata!["requires-bins"]).toEqual(["gh"]);
+  });
+
   it("should handle empty frontmatter", () => {
     const content = `---
 ---

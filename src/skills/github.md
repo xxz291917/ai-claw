@@ -3,6 +3,8 @@ name: github
 description: "Interact with GitHub using the `gh` CLI. Use for pull requests, issues, CI runs, and API queries."
 tags: [git, collaboration, ci-cd]
 allowed-tools: Read, Grep, Glob, Bash
+requires-env: [GH_TOKEN]
+requires-bins: [gh]
 ---
 
 # GitHub Skill

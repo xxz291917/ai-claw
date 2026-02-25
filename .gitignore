@@ -5,3 +5,4 @@ data/
 skills_extra/*
 !skills_extra/.gitkeep
 .DS_Store
+.playwright-mcp/
