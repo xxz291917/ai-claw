@@ -68,7 +68,7 @@ export function createApp(): {
   const toolSuite = buildToolSuite(env, skillsDirs, memoryManager);
 
   // --- Chat Assistant ---
-  const { provider: chatProvider } = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
+  const { provider: chatProvider, registry } = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
   chatRouter(app, chatProvider, {
     sessionManager,
     eventLog,
