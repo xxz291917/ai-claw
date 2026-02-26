@@ -1,6 +1,6 @@
 # AI Claw
 
-An ultra-lightweight AI assistant engine inspired by OpenClaw — built for company-internal deployment with multi-user auth, sandboxed tool execution, multi-channel access (Web & Lark), and a fully extensible skill/tool system.
+An lightweight AI assistant engine inspired by OpenClaw — built for company-internal deployment with multi-user auth, sandboxed tool execution, multi-channel access (Web & Lark), and a fully extensible skill/tool system.
 
 ## Quick Start
 
