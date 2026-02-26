@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
 import type { ChatProvider, ChatEvent } from "../../src/chat/types.js";
-import { larkRouter, type LarkRouterDeps } from "../../src/lark/router.js";
+import { LarkChannel, type LarkChannelConfig } from "../../src/channels/lark.js";
+import type { ChannelContext } from "../../src/channels/types.js";
+import { handleConversation } from "../../src/chat/conversation.js";
 import { SessionManager } from "../../src/sessions/manager.js";
 import { EventLog } from "../../src/core/event-bus.js";
 import { createTestDb } from "../helpers.js";
@@ -15,7 +17,7 @@ function mockProvider(events: ChatEvent[]): ChatProvider {
   };
 }
 
-function setup(events: ChatEvent[], extraDeps?: Partial<LarkRouterDeps>) {
+function setup(events: ChatEvent[], extraConfig?: Partial<LarkChannelConfig>) {
   const db = createTestDb();
   const app = new Hono();
   const provider = mockProvider(events);
@@ -24,23 +26,38 @@ function setup(events: ChatEvent[], extraDeps?: Partial<LarkRouterDeps>) {
   const sendCard = vi.fn<(chatId: string, markdown: string) => Promise<string>>().mockResolvedValue("card_msg_id_1");
   const patchCard = vi.fn<(messageId: string, markdown: string) => Promise<void>>().mockResolvedValue(undefined);
 
-  const deps: LarkRouterDeps = {
+  const channel = new LarkChannel({
     provider,
-    sessionManager,
-    eventLog,
     sendCard,
     patchCard,
-    ...extraDeps,
+    ...extraConfig,
+  });
+
+  const ctx: ChannelContext = {
+    app,
+    sessionManager,
+    eventLog,
+    handleMessage: async (msg, onEvent) => {
+      return handleConversation({
+        userId: msg.userId,
+        message: msg.text,
+        sessionId: msg.sessionId,
+        channel: msg.channel,
+        channelId: msg.channelId,
+        deps: { provider, sessionManager, eventLog },
+        onEvent,
+      });
+    },
   };
 
-  larkRouter(app, deps);
+  channel.start(ctx);
   return { app, sessionManager, eventLog, sendCard, patchCard };
 }
 
 /** Wait for async fire-and-forget processing to complete. */
 const tick = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
-describe("larkRouter", () => {
+describe("LarkChannel", () => {
   it("handles URL verification challenge", async () => {
     const { app } = setup([]);
 

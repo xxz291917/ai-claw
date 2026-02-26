@@ -8,7 +8,7 @@ import { loadEnv } from "./env.js";
 import { WebChannel } from "./channels/web.js";
 import type { ChannelContext } from "./channels/types.js";
 import { handleConversation } from "./chat/conversation.js";
-import { larkRouter } from "./lark/router.js";
+import { LarkChannel } from "./channels/lark.js";
 import { createLarkClient, sendCard, patchCard } from "./lark/client.js";
 import { parseChatUsers, chatAuthMiddleware } from "./chat/auth.js";
 import { setupChatProvider } from "./chat/setup.js";
@@ -108,16 +108,14 @@ export function createApp(): {
   // --- Lark Bot (optional) ---
   if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
     const larkClient = createLarkClient(env);
-    larkRouter(app, {
+    const larkChannel = new LarkChannel({
       provider: chatProvider,
-      sessionManager,
-      eventLog,
-      memoryManager,
       maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
       sendCard: (chatId, markdown) => sendCard(larkClient, chatId, markdown),
       patchCard: (messageId, markdown) => patchCard(larkClient, messageId, markdown),
       verificationToken: env.LARK_VERIFICATION_TOKEN,
     });
+    larkChannel.start(channelCtx);
     console.log("[init] Lark bot enabled");
   }
 
