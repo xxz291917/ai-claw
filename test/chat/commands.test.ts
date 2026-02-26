@@ -4,6 +4,8 @@ import { resolve, join } from "node:path";
 import AdmZip from "adm-zip";
 import { handleCommand } from "../../src/chat/commands.js";
 import { SessionManager } from "../../src/sessions/manager.js";
+import { SubagentManager } from "../../src/subagent/manager.js";
+import { ProviderRegistry } from "../../src/chat/provider-registry.js";
 import { createTestDb } from "../helpers.js";
 
 const tmpInstallDir = resolve("/tmp", `cmd-test-${process.pid}`);
@@ -260,5 +262,122 @@ describe("handleCommand — /search", () => {
     const result = await handleCommand("/search nonexistent-xyz", ctx(s));
     expect(result).toBeTruthy();
     expect((result!.events[0] as any).content).toContain("No skills found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Subagent task commands
+// ---------------------------------------------------------------------------
+
+describe("handleCommand — /tasks", () => {
+  it("lists background tasks for current session", async () => {
+    const s = setup();
+    const registry = new ProviderRegistry();
+    // Register a provider that blocks (never finishes)
+    registry.register({
+      name: "test",
+      type: "openai-compatible",
+      factory: () => ({
+        name: "test",
+        async *stream() {
+          await new Promise(() => {}); // blocks forever
+        },
+      }),
+    });
+    const subagentManager = new SubagentManager({
+      registry,
+      sessionManager: s.sessionManager,
+    });
+
+    subagentManager.spawn({
+      task: "research AI",
+      parentSessionId: s.session.id,
+      userId: "user-1",
+      providerName: "test",
+    });
+
+    const result = await handleCommand("/tasks", {
+      ...ctx(s),
+      subagentManager,
+    });
+
+    expect(result).toBeTruthy();
+    const text = (result!.events[0] as any).content;
+    expect(text).toContain("research AI");
+    expect(text).toContain("running");
+  });
+
+  it("shows message when no tasks exist", async () => {
+    const s = setup();
+    const registry = new ProviderRegistry();
+    const subagentManager = new SubagentManager({
+      registry,
+      sessionManager: s.sessionManager,
+    });
+
+    const result = await handleCommand("/tasks", {
+      ...ctx(s),
+      subagentManager,
+    });
+
+    expect(result).toBeTruthy();
+    const text = (result!.events[0] as any).content;
+    expect(text).toContain("No background tasks");
+  });
+});
+
+describe("handleCommand — /stop", () => {
+  it("cancels running tasks", async () => {
+    const s = setup();
+    const registry = new ProviderRegistry();
+    registry.register({
+      name: "test",
+      type: "openai-compatible",
+      factory: () => ({
+        name: "test",
+        async *stream() {
+          await new Promise(() => {}); // blocks forever
+        },
+      }),
+    });
+    const subagentManager = new SubagentManager({
+      registry,
+      sessionManager: s.sessionManager,
+    });
+
+    subagentManager.spawn({
+      task: "long task",
+      parentSessionId: s.session.id,
+      userId: "user-1",
+      providerName: "test",
+    });
+
+    const result = await handleCommand("/stop", {
+      ...ctx(s),
+      subagentManager,
+    });
+
+    expect(result).toBeTruthy();
+    const text = (result!.events[0] as any).content;
+    expect(text).toContain("1");
+    expect(text).toContain("cancelled");
+  });
+
+  it("reports when no running tasks to cancel", async () => {
+    const s = setup();
+    const registry = new ProviderRegistry();
+    const subagentManager = new SubagentManager({
+      registry,
+      sessionManager: s.sessionManager,
+    });
+
+    const result = await handleCommand("/stop", {
+      ...ctx(s),
+      subagentManager,
+    });
+
+    expect(result).toBeTruthy();
+    const text = (result!.events[0] as any).content;
+    expect(text).toContain("No running tasks");
   });
 });

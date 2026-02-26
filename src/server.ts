@@ -5,8 +5,11 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDb } from "./db.js";
 import { loadEnv } from "./env.js";
-import { chatRouter } from "./chat/router.js";
-import { larkRouter } from "./lark/router.js";
+import { WebChannel } from "./channels/web.js";
+import { ChannelManager } from "./channels/manager.js";
+import type { ChannelContext } from "./channels/types.js";
+import { handleConversation } from "./chat/conversation.js";
+import { LarkChannel } from "./channels/lark.js";
 import { createLarkClient, sendCard, patchCard } from "./lark/client.js";
 import { parseChatUsers, chatAuthMiddleware } from "./chat/auth.js";
 import { setupChatProvider } from "./chat/setup.js";
@@ -16,6 +19,7 @@ import { formatMissingReason } from "./skills/eligibility.js";
 import { EventLog } from "./core/event-bus.js";
 import { SessionManager } from "./sessions/manager.js";
 import { MemoryManager } from "./memory/manager.js";
+import { SubagentManager } from "./subagent/manager.js";
 import type Database from "better-sqlite3";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -64,34 +68,75 @@ export function createApp(): {
     console.log(`[init]   - ${s.name} (${formatMissingReason(s.eligibility)})`);
   }
 
-  // --- Tool Suite ---
-  const toolSuite = buildToolSuite(env, skillsDirs, memoryManager);
-
-  // --- Chat Assistant ---
-  const { provider: chatProvider } = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
-  chatRouter(app, chatProvider, {
+  // --- SubagentManager (created early; registry is set lazily via getter since
+  //     spawn() is only called at runtime, long after init completes) ---
+  let registry: import("./chat/provider-registry.js").ProviderRegistry;
+  const subagentManager = new SubagentManager({
+    get registry() { return registry; },
     sessionManager,
-    eventLog,
-    memoryManager,
-    maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
-    skillsDirs,
   });
 
-  // --- Lark Bot (optional) ---
+  // --- Tool Suite (includes spawn tool) ---
+  const toolSuite = buildToolSuite(env, skillsDirs, memoryManager, {
+    subagentManager,
+    defaultProvider: env.CHAT_PROVIDER,
+  });
+
+  // --- Chat Assistant ---
+  const setup = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
+  const chatProvider = setup.provider;
+  registry = setup.registry;
+
+  // --- Channels ---
+  const channelManager = new ChannelManager();
+
+  // Always register web channel
+  channelManager.register(new WebChannel({
+    provider: chatProvider,
+    maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
+    skillsDirs,
+    subagentManager,
+  }));
+
+  // Optionally register lark channel
   if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
     const larkClient = createLarkClient(env);
-    larkRouter(app, {
+    channelManager.register(new LarkChannel({
       provider: chatProvider,
-      sessionManager,
-      eventLog,
-      memoryManager,
       maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
       sendCard: (chatId, markdown) => sendCard(larkClient, chatId, markdown),
       patchCard: (messageId, markdown) => patchCard(larkClient, messageId, markdown),
       verificationToken: env.LARK_VERIFICATION_TOKEN,
-    });
-    console.log("[init] Lark bot enabled");
+    }));
   }
+
+  const channelCtx: ChannelContext = {
+    app,
+    sessionManager,
+    eventLog,
+    memoryManager,
+    handleMessage: async (msg, onEvent) => {
+      return handleConversation({
+        userId: msg.userId,
+        message: msg.text,
+        sessionId: msg.sessionId,
+        channel: msg.channel,
+        channelId: msg.channelId,
+        deps: {
+          provider: chatProvider,
+          sessionManager,
+          eventLog,
+          memoryManager,
+          maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
+        },
+        onEvent,
+      });
+    },
+  };
+
+  // Start all registered channels (current implementations are sync)
+  channelManager.startAll(channelCtx);
+  console.log(`[init] Channels: ${channelManager.list().join(", ")}`);
 
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));

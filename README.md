@@ -2,8 +2,6 @@
 
 Company-level AI engine. Multi-user, extensible, integrable.
 
-See [docs/introduction.md](docs/introduction.md) for full details.
-
 ## Quick Start
 
 ```bash
@@ -40,11 +38,14 @@ Copy `.env.example` and configure as needed:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `CHAT_PROVIDER` | `claude` or `generic` | No, defaults to `claude` |
-| `ANTHROPIC_API_KEY` | Claude API key (when provider = `claude`) | One of these two |
+| `CHAT_PROVIDER` | Provider name (default: `claude`, or any registered name) | No |
+| `ANTHROPIC_API_KEY` | Claude API key (when provider = `claude`) | One of these |
 | `CHAT_API_KEY` | API key (when provider = `generic`) | is required |
 | `CHAT_MODEL` | Model name (generic provider) | Yes (generic) |
 | `CHAT_API_BASE` | API base URL (generic provider) | Yes (generic) |
+| `PROVIDER_{NAME}_API_BASE` | Auto-register additional providers | No |
+| `PROVIDER_{NAME}_API_KEY` | API key for additional provider | No |
+| `PROVIDER_{NAME}_MODEL` | Model for additional provider | No |
 | `WORKSPACE_DIR` | AI workspace directory | Yes |
 | `PORT` | Server port | No, defaults to `8080` |
 | `SENTRY_AUTH_TOKEN` | Sentry API token | No |
@@ -59,16 +60,18 @@ Copy `.env.example` and configure as needed:
 ```
 src/
 ├── index.ts              # Entry point
-├── server.ts             # Route registration, feature init
+├── server.ts             # App assembly, init flow
 ├── env.ts                # Env validation (Zod)
 ├── db.ts                 # SQLite client
 ├── core/                 # Event bus, audit log
-├── chat/                 # Chat core (router, providers, system prompt, commands)
-├── lark/                 # Lark (飞书) bot integration
+├── channels/             # Channel abstraction (Web, Lark)
+├── chat/                 # Chat core (providers, registry, commands, compaction)
+├── subagent/             # Background task manager
 ├── tools/                # Tool definitions (UnifiedToolDef)
 ├── skills/               # Built-in skills (Markdown)
 ├── memory/               # User memory (FTS5)
 ├── sessions/             # Session management
+├── lark/                 # Lark SDK client
 └── public/               # Frontend static files
 ```
 
@@ -79,4 +82,3 @@ Node.js 22 · TypeScript 5.9 · Hono · SQLite (better-sqlite3, WAL) · Claude A
 ## Docs
 
 - [Architecture](docs/architecture.md)
-- [Problem & Solution](docs/Solution%20for%20Engineers%20cannot%20focus%20on%20high-value%20%20303c2345ab46807b8154ed52adfcebaa.md)

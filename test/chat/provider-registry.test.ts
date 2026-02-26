@@ -1,0 +1,182 @@
+import { describe, it, expect } from "vitest";
+import {
+  ProviderRegistry,
+  scanProviderEnvVars,
+  buildDefaultRegistry,
+} from "../../src/chat/provider-registry.js";
+import type { ChatProvider } from "../../src/chat/types.js";
+
+function fakeProvider(name: string): ChatProvider {
+  return {
+    name,
+    async *stream() {
+      yield { type: "text" as const, content: "hi" };
+      yield { type: "done" as const, sessionId: "", costUsd: 0 };
+    },
+  };
+}
+
+describe("ProviderRegistry", () => {
+  it("registers and creates a provider", () => {
+    const registry = new ProviderRegistry();
+    registry.register({
+      name: "test",
+      type: "openai-compatible",
+      factory: () => fakeProvider("test"),
+    });
+
+    const provider = registry.create("test");
+    expect(provider.name).toBe("test");
+  });
+
+  it("throws on unknown provider name", () => {
+    const registry = new ProviderRegistry();
+    expect(() => registry.create("nope")).toThrow(/not registered/i);
+  });
+
+  it("lists all registered specs", () => {
+    const registry = new ProviderRegistry();
+    registry.register({ name: "a", type: "claude", factory: () => fakeProvider("a") });
+    registry.register({ name: "b", type: "openai-compatible", factory: () => fakeProvider("b") });
+    expect(registry.list().map((s) => s.name)).toEqual(["a", "b"]);
+  });
+
+  it("has() returns true for registered, false for unknown", () => {
+    const registry = new ProviderRegistry();
+    registry.register({ name: "x", type: "claude", factory: () => fakeProvider("x") });
+    expect(registry.has("x")).toBe(true);
+    expect(registry.has("y")).toBe(false);
+  });
+
+  it("getSpec() returns spec for registered, undefined for unknown", () => {
+    const registry = new ProviderRegistry();
+    registry.register({ name: "x", type: "claude", factory: () => fakeProvider("x") });
+    expect(registry.getSpec("x")?.type).toBe("claude");
+    expect(registry.getSpec("y")).toBeUndefined();
+  });
+});
+
+describe("scanProviderEnvVars", () => {
+  it("extracts provider configs from PROVIDER_{NAME}_* env vars", () => {
+    const env: Record<string, string | undefined> = {
+      PROVIDER_DEEPSEEK_API_BASE: "https://api.deepseek.com",
+      PROVIDER_DEEPSEEK_API_KEY: "sk-deep",
+      PROVIDER_DEEPSEEK_MODEL: "deepseek-chat",
+      PROVIDER_QWEN_API_BASE: "https://qwen.api",
+      PROVIDER_QWEN_API_KEY: "sk-qwen",
+      OTHER_VAR: "ignored",
+    };
+
+    const configs = scanProviderEnvVars(env);
+    expect(configs).toHaveLength(2);
+
+    const ds = configs.find((c) => c.name === "deepseek");
+    expect(ds).toMatchObject({
+      name: "deepseek",
+      apiBase: "https://api.deepseek.com",
+      apiKey: "sk-deep",
+      model: "deepseek-chat",
+    });
+
+    const qw = configs.find((c) => c.name === "qwen");
+    expect(qw).toMatchObject({
+      name: "qwen",
+      apiBase: "https://qwen.api",
+      apiKey: "sk-qwen",
+    });
+    expect(qw!.model).toBeUndefined();
+  });
+
+  it("skips providers missing API_BASE or API_KEY", () => {
+    const env = {
+      PROVIDER_INCOMPLETE_API_BASE: "https://example.com",
+    };
+    const configs = scanProviderEnvVars(env);
+    expect(configs).toHaveLength(0);
+  });
+});
+
+const defaultOpts = { systemPrompt: "", skillsDirs: [], mcpServers: {} };
+
+describe("buildDefaultRegistry", () => {
+  it("always registers claude", () => {
+    const registry = buildDefaultRegistry(
+      { WORKSPACE_DIR: "/tmp" },
+      defaultOpts,
+    );
+    expect(registry.has("claude")).toBe(true);
+    expect(registry.getSpec("claude")?.type).toBe("claude");
+  });
+
+  it("claude factory throws without ANTHROPIC_API_KEY", () => {
+    const registry = buildDefaultRegistry(
+      { WORKSPACE_DIR: "/tmp" },
+      defaultOpts,
+    );
+    expect(() => registry.create("claude")).toThrow(/ANTHROPIC_API_KEY/);
+  });
+
+  it("registers providers from PROVIDER_* env vars", () => {
+    const registry = buildDefaultRegistry(
+      {
+        WORKSPACE_DIR: "/tmp",
+        PROVIDER_DEEPSEEK_API_BASE: "https://api.deepseek.com",
+        PROVIDER_DEEPSEEK_API_KEY: "sk-deep",
+        PROVIDER_DEEPSEEK_MODEL: "deepseek-chat",
+      },
+      { systemPrompt: "test", skillsDirs: [], mcpServers: {} },
+    );
+    expect(registry.has("deepseek")).toBe(true);
+    expect(registry.getSpec("deepseek")?.type).toBe("openai-compatible");
+  });
+
+  it("registers 'generic' provider from legacy CHAT_API_BASE/KEY", () => {
+    const registry = buildDefaultRegistry(
+      {
+        WORKSPACE_DIR: "/tmp",
+        CHAT_API_BASE: "https://api.deepseek.com",
+        CHAT_API_KEY: "sk-legacy",
+        CHAT_MODEL: "deepseek-chat",
+      },
+      { systemPrompt: "test", skillsDirs: [], mcpServers: {} },
+    );
+    expect(registry.has("generic")).toBe(true);
+    expect(registry.getSpec("generic")?.type).toBe("openai-compatible");
+  });
+
+  it("PROVIDER_* takes precedence over legacy CHAT_API_* for 'generic' name", () => {
+    const registry = buildDefaultRegistry(
+      {
+        WORKSPACE_DIR: "/tmp",
+        // PROVIDER_GENERIC_* registers "generic" first
+        PROVIDER_GENERIC_API_BASE: "https://provider-generic.api",
+        PROVIDER_GENERIC_API_KEY: "sk-provider",
+        // Legacy vars should NOT override
+        CHAT_API_BASE: "https://legacy.api",
+        CHAT_API_KEY: "sk-legacy",
+      },
+      { systemPrompt: "test", skillsDirs: [], mcpServers: {} },
+    );
+    expect(registry.has("generic")).toBe(true);
+    // Should have the PROVIDER_* version (it registered first)
+    expect(registry.getSpec("generic")?.type).toBe("openai-compatible");
+  });
+
+  it("registers multiple providers simultaneously", () => {
+    const registry = buildDefaultRegistry(
+      {
+        WORKSPACE_DIR: "/tmp",
+        PROVIDER_DEEPSEEK_API_BASE: "https://api.deepseek.com",
+        PROVIDER_DEEPSEEK_API_KEY: "sk-deep",
+        PROVIDER_QWEN_API_BASE: "https://qwen.api",
+        PROVIDER_QWEN_API_KEY: "sk-qwen",
+      },
+      defaultOpts,
+    );
+    // claude + deepseek + qwen
+    expect(registry.list()).toHaveLength(3);
+    expect(registry.has("claude")).toBe(true);
+    expect(registry.has("deepseek")).toBe(true);
+    expect(registry.has("qwen")).toBe(true);
+  });
+});

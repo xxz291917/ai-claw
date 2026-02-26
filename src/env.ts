@@ -29,7 +29,7 @@ const envSchema = z.object({
   SKILLS_EXTRA_DIRS: z.string().default("skills_extra"),
 
   // Chat assistant
-  CHAT_PROVIDER: z.enum(["claude", "generic"]).default("claude"),
+  CHAT_PROVIDER: z.string().default("claude"),
   CHAT_MODEL: z.string().optional(),
   CHAT_API_BASE: z.string().optional(),
   CHAT_API_KEY: z.string().optional(),
