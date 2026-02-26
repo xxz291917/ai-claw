@@ -1,4 +1,5 @@
 import { estimateHistoryTokens } from "./token-utils.js";
+import { log } from "../logger.js";
 
 type HistoryMessage = {
   role: "user" | "assistant" | "system";
@@ -55,7 +56,7 @@ export async function compactHistory(
   const early = history.slice(0, cutoff);
   const recent = history.slice(cutoff);
 
-  console.log(
+  log.info(
     `[compact] ${history.length} messages → trimming ${early.length} early, keeping ${recent.length} recent` +
       ` (pressure=${pressure.toFixed(2)}, keep=${Math.round(keepRatio * 100)}%)` +
       (tokenThresholdHit
@@ -75,7 +76,7 @@ export async function compactHistory(
           if (flushMessages.length > 0) {
             await opts.memoryFlush!(flushMessages);
           }
-          console.log(`[compact] memoryFlush: ${Date.now() - t0}ms`);
+          log.info(`[compact] memoryFlush: ${Date.now() - t0}ms`);
         } catch {
           // Best-effort — do not block compaction
         }
@@ -104,7 +105,7 @@ export async function compactHistory(
             summary = await opts.summarize!(early);
           }
 
-          console.log(
+          log.info(
             `[compact] summarize: ${Date.now() - t0}ms (${summary.length} chars)`,
           );
           return summary;

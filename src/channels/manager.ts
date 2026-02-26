@@ -1,4 +1,5 @@
 import type { Channel, ChannelContext } from "./types.js";
+import { log } from "../logger.js";
 
 export class ChannelManager {
   private channels: Channel[] = [];
@@ -10,7 +11,7 @@ export class ChannelManager {
   async startAll(ctx: ChannelContext): Promise<void> {
     for (const ch of this.channels) {
       await ch.start(ctx);
-      console.log(`[channel] ${ch.name} started`);
+      log.info(`[channel] ${ch.name} started`);
     }
   }
 

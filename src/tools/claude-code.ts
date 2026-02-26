@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import type { UnifiedToolDef } from "./types.js";
+import { log } from "../logger.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
 const MAX_TIMEOUT_MS = 600_000; // 10 minutes
@@ -78,8 +79,8 @@ async function runClaudeCode(
     ? Math.min(args.timeout * 1000, maxTimeout)
     : defaultTimeout;
 
-  console.log(`[claude_code] Delegating task (cwd=${effectiveCwd}, timeout=${timeoutMs}ms, maxTurns=${maxTurns})`);
-  console.log(`[claude_code] Task: ${args.task.slice(0, 200)}`);
+  log.info(`[claude_code] Delegating task (cwd=${effectiveCwd}, timeout=${timeoutMs}ms, maxTurns=${maxTurns})`);
+  log.info(`[claude_code] Task: ${args.task.slice(0, 200)}`);
 
   try {
     const result = await execClaudeCli(args.task, {

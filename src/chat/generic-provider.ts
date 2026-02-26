@@ -1,6 +1,7 @@
 import type { ChatProvider, ChatEvent, ChatRequest } from "./types.js";
 import type { ToolContext } from "../tools/types.js";
 import { estimateStringTokens } from "./token-utils.js";
+import { log } from "../logger.js";
 
 export type ToolDef = {
   name: string;
@@ -106,7 +107,7 @@ export class GenericProvider implements ChatProvider {
       }
     }
     messages.push({ role: "user", content: req.message });
-    console.log(`[generic] stream start — model=${this.config.model} messages=${messages.length} tokens≈${estimateTokens(messages)}`);
+    log.info(`[generic] stream start — model=${this.config.model} messages=${messages.length} tokens≈${estimateTokens(messages)}`);
 
     const allTools: ToolDef[] = this.config.tools ?? [];
     const toolMap = new Map(allTools.map((t) => [t.name, t]));
@@ -122,7 +123,7 @@ export class GenericProvider implements ChatProvider {
     }));
 
     for (let turn = 0; turn < maxTurns; turn++) {
-      console.log(`[generic] turn ${turn + 1}/${maxTurns} — messages=${messages.length} (${Date.now() - t0}ms)`);
+      log.info(`[generic] turn ${turn + 1}/${maxTurns} — messages=${messages.length} (${Date.now() - t0}ms)`);
 
       const body: Record<string, unknown> = {
         model: this.config.model,
@@ -159,7 +160,7 @@ export class GenericProvider implements ChatProvider {
 
       if (!res.ok || !res.body) {
         const errBody = await res.text().catch(() => "");
-        console.error(`[chat] API error ${res.status}:`, errBody);
+        log.error(`[chat] API error ${res.status}:`, errBody);
         yield { type: "error", message: friendlyApiError(res.status, errBody) };
         yield { type: "done", sessionId: "", costUsd: 0 };
         return;
@@ -230,11 +231,11 @@ export class GenericProvider implements ChatProvider {
       }
 
       if (toolCalls.length === 0) {
-        console.log(`[generic] no tool calls — done (${Date.now() - t0}ms)`);
+        log.info(`[generic] no tool calls — done (${Date.now() - t0}ms)`);
         yield { type: "done", sessionId: "", costUsd: 0 };
         return;
       }
-      console.log(`[generic] ${toolCalls.filter(Boolean).length} tool calls: ${toolCalls.filter(Boolean).map(tc => tc.function.name).join(", ")} (${Date.now() - t0}ms)`);
+      log.info(`[generic] ${toolCalls.filter(Boolean).length} tool calls: ${toolCalls.filter(Boolean).map(tc => tc.function.name).join(", ")} (${Date.now() - t0}ms)`);
 
       const assistantMsg: Message = {
         role: "assistant",
@@ -269,7 +270,7 @@ export class GenericProvider implements ChatProvider {
         } else {
           result = `Unknown tool: ${tc.function.name}`;
         }
-        console.log(`[generic]   tool ${tc.function.name}: ${result.length} chars (${Date.now() - toolStart}ms)`);
+        log.info(`[generic]   tool ${tc.function.name}: ${result.length} chars (${Date.now() - toolStart}ms)`);
 
         // Truncate large tool results
         result = truncateToolResult(result, this.maxToolResultChars);
@@ -281,7 +282,7 @@ export class GenericProvider implements ChatProvider {
       // Token budget check — if approaching limit, compact tool results and finish
       const usedTokens = estimateTokens(messages);
       if (usedTokens > this.maxContextTokens * 0.8) {
-        console.log(
+        log.info(
           `[chat] Token budget ~${usedTokens}/${this.maxContextTokens} (${Math.round((usedTokens / this.maxContextTokens) * 100)}%) — compacting and finishing`,
         );
         compactToolMessages(messages, this.maxToolResultChars);

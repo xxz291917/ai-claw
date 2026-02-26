@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import type { UnifiedToolDef } from "./types.js";
+import { log } from "../logger.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 120s — enough for git, npm, sqlite3
 const MAX_TIMEOUT_MS = 600_000; // 10 minutes
@@ -93,11 +94,11 @@ async function runCommand(
   // Fallback chain: args.cwd → defaultCwd → process.cwd()
   // spawn() throws ENOENT when cwd doesn't exist (not just when binary is missing)
   if (!existsSync(cwd)) {
-    console.warn(`[bash_exec] cwd "${cwd}" does not exist, falling back to default: ${defaultCwd}`);
+    log.warn(`[bash_exec] cwd "${cwd}" does not exist, falling back to default: ${defaultCwd}`);
     cwd = defaultCwd;
   }
   if (!existsSync(cwd)) {
-    console.warn(`[bash_exec] default cwd "${cwd}" also missing, falling back to process.cwd(): ${process.cwd()}`);
+    log.warn(`[bash_exec] default cwd "${cwd}" also missing, falling back to process.cwd(): ${process.cwd()}`);
     cwd = process.cwd();
   }
 
@@ -105,7 +106,7 @@ async function runCommand(
     ? Math.min(args.timeout * 1000, maxTimeout)
     : defaultTimeout;
 
-  console.log(`[bash_exec] Running: ${command} (cwd=${cwd}, timeout=${timeoutMs}ms)`);
+  log.info(`[bash_exec] Running: ${command} (cwd=${cwd}, timeout=${timeoutMs}ms)`);
 
   try {
     const result = await execStreaming(command, { cwd, timeoutMs, maxOutput });
@@ -122,7 +123,7 @@ async function runCommand(
 
     return truncateOutput(output, maxOutput);
   } catch (err: any) {
-    console.error(`[bash_exec] Error:`, err.message);
+    log.error(`[bash_exec] Error:`, err.message);
     return `Error: ${err.message}`;
   }
 }

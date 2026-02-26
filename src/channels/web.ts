@@ -4,6 +4,7 @@ import type { SubagentManager } from "../subagent/manager.js";
 import { streamSSE } from "hono/streaming";
 import { handleCommand } from "../chat/commands.js";
 import { handleConversation, type ConversationDeps } from "../chat/conversation.js";
+import { log } from "../logger.js";
 
 export type WebChannelConfig = {
   provider: ChatProvider;
@@ -40,7 +41,7 @@ export class WebChannel implements Channel {
         return c.json({ error: "message is required" }, 400);
       }
 
-      console.log(`[chat] <- message="${message.slice(0, 80)}" sessionId=${sessionId ?? "(new)"}`);
+      log.info(`[chat] <- message="${message.slice(0, 80)}" sessionId=${sessionId ?? "(new)"}`);
 
       // 1. Resolve or create session
       const userId = c.get("userId") ?? "web-anonymous";
@@ -49,7 +50,7 @@ export class WebChannel implements Channel {
       // Don't reuse a session that belongs to a different user
       // (e.g. old anonymous session after the user logs in with a token)
       if (session && session.userId !== userId) {
-        console.log(`[chat] session ${session.id} belongs to ${session.userId}, not ${userId} -- creating new`);
+        log.info(`[chat] session ${session.id} belongs to ${session.userId}, not ${userId} -- creating new`);
         session = null;
       }
 
@@ -60,9 +61,9 @@ export class WebChannel implements Channel {
           channelId: "",
           provider: provider.name,
         });
-        console.log(`[chat] new session ${session.id} for user=${userId}`);
+        log.info(`[chat] new session ${session.id} for user=${userId}`);
       } else {
-        console.log(`[chat] reuse session ${session.id} user=${userId}`);
+        log.info(`[chat] reuse session ${session.id} user=${userId}`);
       }
 
       // 2. Handle slash commands (before LLM call)
@@ -130,7 +131,7 @@ export class WebChannel implements Channel {
             },
           });
 
-          console.log(`[chat] done (${Date.now() - t0}ms)`);
+          log.info(`[chat] done (${Date.now() - t0}ms)`);
 
           // If there was an error, send error + done events
           // (these weren't emitted by the provider, so onEvent didn't fire them)
@@ -155,7 +156,7 @@ export class WebChannel implements Channel {
           }
         } catch (err: any) {
           // Unexpected error not caught by handleConversation
-          console.error("[chat] Unexpected error:", err.message ?? err);
+          log.error("[chat] Unexpected error:", err.message ?? err);
           try {
             await stream.writeSSE({
               data: JSON.stringify({

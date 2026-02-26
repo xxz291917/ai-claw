@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { z } from "zod";
 import type { UnifiedToolDef } from "./types.js";
+import { log } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -34,7 +35,7 @@ export function createFileTools(config: FileToolsConfig): UnifiedToolDef[] {
   // Resolve workspace with fallback (same strategy as bash_exec)
   let workspaceDir = resolve(config.workspaceDir);
   if (!existsSync(workspaceDir)) {
-    console.warn(`[file_tools] workspace "${workspaceDir}" does not exist, falling back to process.cwd(): ${process.cwd()}`);
+    log.warn(`[file_tools] workspace "${workspaceDir}" does not exist, falling back to process.cwd(): ${process.cwd()}`);
     workspaceDir = process.cwd();
   }
   const maxReadBytes = config.maxReadBytes ?? 50_000;

@@ -20,6 +20,7 @@ import { EventLog } from "./core/event-bus.js";
 import { SessionManager } from "./sessions/manager.js";
 import { MemoryManager } from "./memory/manager.js";
 import { SubagentManager } from "./subagent/manager.js";
+import { log } from "./logger.js";
 import type Database from "better-sqlite3";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,7 +42,7 @@ export function createApp(): {
   const chatUsers = parseChatUsers(env.CHAT_USERS);
   app.use("/api/chat", chatAuthMiddleware(chatUsers));
   if (chatUsers.size > 0) {
-    console.log(`[init] Chat auth enabled (${chatUsers.size} users)`);
+    log.info(`[init] Chat auth enabled (${chatUsers.size} users)`);
   }
 
   // Health check
@@ -60,12 +61,12 @@ export function createApp(): {
   const allSkills = scanSkillDirs(skillsDirs);
   const eligibleSkills = allSkills.filter((s) => s.eligibility.eligible);
   const skippedSkills = allSkills.filter((s) => !s.eligibility.eligible);
-  console.log(`[init] Skills: ${eligibleSkills.length} available, ${skippedSkills.length} skipped`);
+  log.info(`[init] Skills: ${eligibleSkills.length} available, ${skippedSkills.length} skipped`);
   for (const s of eligibleSkills) {
-    console.log(`[init]   + ${s.name}`);
+    log.info(`[init]   + ${s.name}`);
   }
   for (const s of skippedSkills) {
-    console.log(`[init]   - ${s.name} (${formatMissingReason(s.eligibility)})`);
+    log.info(`[init]   - ${s.name} (${formatMissingReason(s.eligibility)})`);
   }
 
   // --- SubagentManager (created early; registry is set lazily via getter since
@@ -136,7 +137,7 @@ export function createApp(): {
 
   // Start all registered channels (current implementations are sync)
   channelManager.startAll(channelCtx);
-  console.log(`[init] Channels: ${channelManager.list().join(", ")}`);
+  log.info(`[init] Channels: ${channelManager.list().join(", ")}`);
 
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
@@ -149,7 +150,7 @@ export function startServer() {
   const env = loadEnv(); // singleton — already parsed by createApp()
 
   serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-    console.log(`
+    log.info(`
 AI Claw 服务已启动
 
   地址:     http://localhost:${info.port}

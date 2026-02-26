@@ -14,6 +14,7 @@ import type { MemoryManager } from "../memory/manager.js";
 import type { MemoryFlushFn } from "./compaction.js";
 import { compactHistory } from "./compaction.js";
 import { extractMemories } from "../memory/extractor.js";
+import { log } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,7 +95,7 @@ export async function handleConversation(
 
   // Don't reuse a session that belongs to a different user
   if (session && session.userId !== userId) {
-    console.log(
+    log.info(
       `[conversation] session ${session.id} belongs to ${session.userId}, not ${userId} — creating new`,
     );
     session = null;
@@ -107,9 +108,9 @@ export async function handleConversation(
       channelId,
       provider: provider.name,
     });
-    console.log(`[conversation] new session ${session.id} for user=${userId}`);
+    log.info(`[conversation] new session ${session.id} for user=${userId}`);
   } else {
-    console.log(`[conversation] reuse session ${session.id} user=${userId}`);
+    log.info(`[conversation] reuse session ${session.id} user=${userId}`);
   }
 
   const sessionId = session.id;
@@ -127,7 +128,7 @@ export async function handleConversation(
     if (memoryManager) {
       try {
         const memories = memoryManager.search(session.userId, message);
-        console.log(`[conversation] memory search: ${memories.length} results`);
+        log.info(`[conversation] memory search: ${memories.length} results`);
         if (memories.length > 0) {
           memoryText = memories
             .map((m) => `- id=${m.id} [${m.category}] ${m.key}: ${m.value}`)
@@ -155,7 +156,7 @@ export async function handleConversation(
         content: m.content,
       }));
 
-      console.log(`[conversation] history: ${rawHistory.length} messages`);
+      log.info(`[conversation] history: ${rawHistory.length} messages`);
 
       // Build memoryFlush callback for compaction
       const memoryFlush: MemoryFlushFn | undefined =
@@ -186,12 +187,12 @@ export async function handleConversation(
       // Persist compacted history so subsequent requests don't re-summarize
       if (compacted.length < rawHistory.length) {
         const keepCount = compacted.length - 1; // exclude the summary message
-        console.log(
+        log.info(
           `[conversation] compacted ${rawHistory.length} → ${compacted.length} messages (keep=${keepCount}), persisting (${Date.now() - t0}ms)`,
         );
         sessionManager.compactMessages(sessionId, keepCount, compacted[0]);
       } else {
-        console.log(
+        log.info(
           `[conversation] history: ${compacted.length} messages, no compaction needed (${Date.now() - t0}ms)`,
         );
       }
@@ -204,7 +205,7 @@ export async function handleConversation(
 
       history = compacted;
     } else {
-      console.log(`[conversation] native context provider — skipping history (${Date.now() - t0}ms)`);
+      log.info(`[conversation] native context provider — skipping history (${Date.now() - t0}ms)`);
     }
 
     // 5. Stream from provider — collect ALL events
@@ -213,7 +214,7 @@ export async function handleConversation(
     const events: ChatEvent[] = [];
 
     try {
-      console.log(
+      log.info(
         `[conversation] → provider.stream() provider=${provider.name} (${Date.now() - t0}ms)`,
       );
       for await (const event of provider.stream({
@@ -232,20 +233,20 @@ export async function handleConversation(
         }
 
         if (event.type === "tool_use") {
-          console.log(
+          log.info(
             `[conversation]   tool_use: ${(event as any).tool} (${Date.now() - t0}ms)`,
           );
         }
         if (event.type === "tool_result") {
           const output = (event as any).output ?? "";
-          console.log(
+          log.info(
             `[conversation]   tool_result: ${(event as any).tool} (${output.length} chars, ${Date.now() - t0}ms)`,
           );
         }
 
         if (event.type === "done") {
           costUsd = (event as any).costUsd ?? 0;
-          console.log(
+          log.info(
             `[conversation] done (${Date.now() - t0}ms) cost=$${costUsd} text=${assistantText.length} chars`,
           );
 
@@ -278,7 +279,7 @@ export async function handleConversation(
         }
       }
     } catch (err: any) {
-      console.error("[conversation] Stream error:", err.message ?? err);
+      log.error("[conversation] Stream error:", err.message ?? err);
 
       // Save partial response if any
       if (assistantText) {
