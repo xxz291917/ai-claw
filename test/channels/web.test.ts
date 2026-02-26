@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { Hono } from "hono";
 import type { ChatProvider, ChatEvent } from "../../src/chat/types.js";
-import { chatRouter } from "../../src/chat/router.js";
+import { WebChannel } from "../../src/channels/web.js";
+import type { ChannelContext } from "../../src/channels/types.js";
 import { SessionManager } from "../../src/sessions/manager.js";
 import { EventLog } from "../../src/core/event-bus.js";
 import { MemoryManager } from "../../src/memory/manager.js";
+import { handleConversation } from "../../src/chat/conversation.js";
 import { createTestDb } from "../helpers.js";
 import "../../src/chat/auth.js";
 
@@ -24,11 +26,35 @@ function setup(events: ChatEvent[]) {
   const sessionManager = new SessionManager(db);
   const eventLog = new EventLog(db);
 
-  chatRouter(app, provider, { sessionManager, eventLog, skillsDirs: ["/tmp/test-skills"] });
+  const channel = new WebChannel({
+    provider,
+    skillsDirs: ["/tmp/test-skills"],
+  });
+
+  const ctx: ChannelContext = {
+    app,
+    sessionManager,
+    eventLog,
+    handleMessage: async (msg, onEvent) => {
+      return handleConversation({
+        userId: msg.userId,
+        message: msg.text,
+        sessionId: msg.sessionId,
+        channel: msg.channel,
+        channelId: msg.channelId,
+        deps: { provider, sessionManager, eventLog },
+        onEvent,
+      });
+    },
+  };
+
+  // start() registers the routes synchronously (returns a resolved promise)
+  channel.start(ctx);
+
   return { app, sessionManager, eventLog };
 }
 
-describe("chatRouter", () => {
+describe("WebChannel", () => {
   it("POST /api/chat returns SSE stream", async () => {
     const { app } = setup([
       { type: "text", content: "Hello" },
@@ -124,7 +150,29 @@ describe("chatRouter", () => {
     };
 
     const app = new Hono();
-    chatRouter(app, provider, { sessionManager, eventLog, skillsDirs: ["/tmp/test-skills"] });
+    const channel = new WebChannel({
+      provider,
+      skillsDirs: ["/tmp/test-skills"],
+    });
+
+    const ctx: ChannelContext = {
+      app,
+      sessionManager,
+      eventLog,
+      handleMessage: async (msg, onEvent) => {
+        return handleConversation({
+          userId: msg.userId,
+          message: msg.text,
+          sessionId: msg.sessionId,
+          channel: msg.channel,
+          channelId: msg.channelId,
+          deps: { provider, sessionManager, eventLog },
+          onEvent,
+        });
+      },
+    };
+
+    await channel.start(ctx);
 
     const res = await app.request("/api/chat", {
       method: "POST",
@@ -189,12 +237,30 @@ describe("chatRouter", () => {
     };
 
     const app = new Hono();
-    chatRouter(app, provider, {
+    const channel = new WebChannel({
+      provider,
+      skillsDirs: ["/tmp/test-skills"],
+    });
+
+    const ctx: ChannelContext = {
+      app,
       sessionManager,
       eventLog,
       memoryManager,
-      skillsDirs: ["/tmp/test-skills"],
-    });
+      handleMessage: async (msg, onEvent) => {
+        return handleConversation({
+          userId: msg.userId,
+          message: msg.text,
+          sessionId: msg.sessionId,
+          channel: msg.channel,
+          channelId: msg.channelId,
+          deps: { provider, sessionManager, eventLog, memoryManager },
+          onEvent,
+        });
+      },
+    };
+
+    await channel.start(ctx);
 
     const res = await app.request("/api/chat", {
       method: "POST",
@@ -228,7 +294,29 @@ describe("chatRouter", () => {
       return next();
     });
 
-    chatRouter(app, provider, { sessionManager, eventLog, skillsDirs: ["/tmp/test-skills"] });
+    const channel = new WebChannel({
+      provider,
+      skillsDirs: ["/tmp/test-skills"],
+    });
+
+    const ctx: ChannelContext = {
+      app,
+      sessionManager,
+      eventLog,
+      handleMessage: async (msg, onEvent) => {
+        return handleConversation({
+          userId: msg.userId,
+          message: msg.text,
+          sessionId: msg.sessionId,
+          channel: msg.channel,
+          channelId: msg.channelId,
+          deps: { provider, sessionManager, eventLog },
+          onEvent,
+        });
+      },
+    };
+
+    await channel.start(ctx);
 
     const res = await app.request("/api/chat", {
       method: "POST",

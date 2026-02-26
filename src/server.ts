@@ -5,7 +5,9 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDb } from "./db.js";
 import { loadEnv } from "./env.js";
-import { chatRouter } from "./chat/router.js";
+import { WebChannel } from "./channels/web.js";
+import type { ChannelContext } from "./channels/types.js";
+import { handleConversation } from "./chat/conversation.js";
 import { larkRouter } from "./lark/router.js";
 import { createLarkClient, sendCard, patchCard } from "./lark/client.js";
 import { parseChatUsers, chatAuthMiddleware } from "./chat/auth.js";
@@ -69,13 +71,39 @@ export function createApp(): {
 
   // --- Chat Assistant ---
   const { provider: chatProvider, registry } = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
-  chatRouter(app, chatProvider, {
-    sessionManager,
-    eventLog,
-    memoryManager,
+
+  const webChannel = new WebChannel({
+    provider: chatProvider,
     maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
     skillsDirs,
   });
+
+  const channelCtx: ChannelContext = {
+    app,
+    sessionManager,
+    eventLog,
+    memoryManager,
+    handleMessage: async (msg, onEvent) => {
+      return handleConversation({
+        userId: msg.userId,
+        message: msg.text,
+        sessionId: msg.sessionId,
+        channel: msg.channel,
+        channelId: msg.channelId,
+        deps: {
+          provider: chatProvider,
+          sessionManager,
+          eventLog,
+          memoryManager,
+          maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
+        },
+        onEvent,
+      });
+    },
+  };
+
+  // WebChannel.start() registers routes synchronously
+  webChannel.start(channelCtx);
 
   // --- Lark Bot (optional) ---
   if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
