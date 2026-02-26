@@ -1,5 +1,6 @@
 /**
- * Chat provider setup — builds system prompt and provider instance.
+ * Chat provider setup — builds system prompt, provider registry, and
+ * creates the active provider instance.
  *
  * Tool assembly is delegated to the shared buildToolSuite() so that
  * both Chat and Fault Healing share the same tool infrastructure.
@@ -7,11 +8,9 @@
 
 import { buildToolSuite, type ToolSuiteEnv, type ToolSuiteResult } from "../tools/suite.js";
 import { buildSystemPrompt } from "./system-prompt.js";
-import { ClaudeProvider } from "./claude-provider.js";
-import { GenericProvider } from "./generic-provider.js";
+import { buildDefaultRegistry, type ProviderRegistry } from "./provider-registry.js";
 import type { ChatProvider } from "./types.js";
 import type { MemoryManager } from "../memory/manager.js";
-import { scanSkillDirs, filterEligibleSkills } from "../skills/loader.js";
 
 export type ChatSetupEnv = ToolSuiteEnv & {
   CHAT_PROVIDER?: string;
@@ -25,6 +24,7 @@ export type ChatSetupEnv = ToolSuiteEnv & {
 
 export type ChatSetupResult = {
   provider: ChatProvider;
+  registry: ProviderRegistry;
   mcpServers: Record<string, unknown>;
 };
 
@@ -36,57 +36,34 @@ export function setupChatProvider(
 ): ChatSetupResult {
   const suite = existingSuite ?? buildToolSuite(env, skillsDirs, memoryManager);
 
-  // --- Create provider ---
-  const isGeneric = env.CHAT_PROVIDER === "generic" && !!env.CHAT_API_BASE && !!env.CHAT_API_KEY;
+  const providerName = env.CHAT_PROVIDER ?? "claude";
 
   // GenericProvider gets structured tool definitions via the API `tools` parameter,
   // so we OMIT tool descriptions from the system prompt to avoid duplication.
   // Duplicate tool listings cause some models (e.g. DeepSeek) to "roleplay" tool calls
   // in text (fake XML tags) instead of using the function calling API properly.
+  // Simple heuristic: only include tool descriptions for the "claude" provider.
+  const includeToolDescs = providerName === "claude";
+
   const systemPrompt = buildSystemPrompt({
     workspaceDir: env.WORKSPACE_DIR,
     skillsDirs,
-    tools: isGeneric ? undefined : suite.descriptions,
+    tools: includeToolDescs ? suite.descriptions : undefined,
   });
 
-  let provider: ChatProvider;
-  if (isGeneric) {
-    provider = new GenericProvider({
-      baseUrl: env.CHAT_API_BASE!,
-      apiKey: env.CHAT_API_KEY!,
-      model: env.CHAT_MODEL ?? "deepseek-chat",
+  // Build the registry with all available providers
+  const registry = buildDefaultRegistry(
+    env as unknown as Record<string, string | undefined>,
+    {
       systemPrompt,
-      tools: suite.genericTools,
-      maxToolResultChars: env.CHAT_MAX_TOOL_RESULT_CHARS,
-      maxContextTokens: env.CHAT_MAX_CONTEXT_TOKENS,
-      fetchTimeout: env.CHAT_FETCH_TIMEOUT,
-    });
-  } else {
-    provider = new ClaudeProvider({
-      workspaceDir: env.WORKSPACE_DIR,
-      skillContent: systemPrompt,
-      env: collectSkillEnv(skillsDirs),
+      skillsDirs,
       mcpServers: suite.mcpServers,
-    });
-  }
+      genericTools: suite.genericTools,
+    },
+  );
 
-  return { provider, mcpServers: suite.mcpServers };
-}
+  // Create the selected provider
+  const provider = registry.create(providerName);
 
-/**
- * Collect env vars required by eligible skills from process.env.
- * Used to forward skill-specific API keys to ClaudeProvider's subprocess.
- */
-function collectSkillEnv(skillsDirs: string[]): Record<string, string> {
-  const skills = filterEligibleSkills(scanSkillDirs(skillsDirs));
-  const env: Record<string, string> = {};
-  for (const skill of skills) {
-    for (const key of skill.requirements.env) {
-      const value = process.env[key];
-      if (value && !env[key]) {
-        env[key] = value;
-      }
-    }
-  }
-  return env;
+  return { provider, registry, mcpServers: suite.mcpServers };
 }
