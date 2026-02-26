@@ -19,6 +19,7 @@ import { formatMissingReason } from "./skills/eligibility.js";
 import { EventLog } from "./core/event-bus.js";
 import { SessionManager } from "./sessions/manager.js";
 import { MemoryManager } from "./memory/manager.js";
+import { SubagentManager } from "./subagent/manager.js";
 import type Database from "better-sqlite3";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -67,11 +68,24 @@ export function createApp(): {
     console.log(`[init]   - ${s.name} (${formatMissingReason(s.eligibility)})`);
   }
 
-  // --- Tool Suite ---
-  const toolSuite = buildToolSuite(env, skillsDirs, memoryManager);
+  // --- SubagentManager (created early; registry is set lazily via getter since
+  //     spawn() is only called at runtime, long after init completes) ---
+  let registry: import("./chat/provider-registry.js").ProviderRegistry;
+  const subagentManager = new SubagentManager({
+    get registry() { return registry; },
+    sessionManager,
+  });
+
+  // --- Tool Suite (includes spawn tool) ---
+  const toolSuite = buildToolSuite(env, skillsDirs, memoryManager, {
+    subagentManager,
+    defaultProvider: env.CHAT_PROVIDER,
+  });
 
   // --- Chat Assistant ---
-  const { provider: chatProvider, registry } = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
+  const setup = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
+  const chatProvider = setup.provider;
+  registry = setup.registry;
 
   // --- Channels ---
   const channelManager = new ChannelManager();
@@ -81,6 +95,7 @@ export function createApp(): {
     provider: chatProvider,
     maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
     skillsDirs,
+    subagentManager,
   }));
 
   // Optionally register lark channel

@@ -17,7 +17,9 @@ import { createFileTools } from "./file-tools.js";
 import { createMemorySaveTool } from "./memory-save.js";
 import { createMemoryDeleteTool } from "./memory-delete.js";
 import { createMemoryListTool } from "./memory-list.js";
+import { createSpawnTool } from "./spawn.js";
 import type { MemoryManager } from "../memory/manager.js";
+import type { SubagentManager } from "../subagent/manager.js";
 import type { ToolDef } from "../chat/generic-provider.js";
 import type { UnifiedToolDef } from "./types.js";
 
@@ -49,6 +51,7 @@ export function buildToolSuite(
   env: ToolSuiteEnv,
   skillsDirs: string[],
   memoryManager?: MemoryManager,
+  opts?: { subagentManager?: SubagentManager; defaultProvider?: string },
 ): ToolSuiteResult {
   const toolDefs: UnifiedToolDef[] = [
     createSkillReaderTool(skillsDirs),
@@ -92,6 +95,13 @@ export function buildToolSuite(
       createMemorySaveTool(memoryManager),
       createMemoryDeleteTool(memoryManager),
       createMemoryListTool(memoryManager),
+    );
+  }
+
+  // Spawn tool — delegates to SubagentManager for background task execution
+  if (opts?.subagentManager) {
+    toolDefs.push(
+      createSpawnTool(opts.subagentManager, opts.defaultProvider ?? "claude"),
     );
   }
 
