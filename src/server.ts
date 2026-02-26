@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createDb } from "./db.js";
 import { loadEnv } from "./env.js";
 import { WebChannel } from "./channels/web.js";
+import { ChannelManager } from "./channels/manager.js";
 import type { ChannelContext } from "./channels/types.js";
 import { handleConversation } from "./chat/conversation.js";
 import { LarkChannel } from "./channels/lark.js";
@@ -72,11 +73,27 @@ export function createApp(): {
   // --- Chat Assistant ---
   const { provider: chatProvider, registry } = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
 
-  const webChannel = new WebChannel({
+  // --- Channels ---
+  const channelManager = new ChannelManager();
+
+  // Always register web channel
+  channelManager.register(new WebChannel({
     provider: chatProvider,
     maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
     skillsDirs,
-  });
+  }));
+
+  // Optionally register lark channel
+  if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
+    const larkClient = createLarkClient(env);
+    channelManager.register(new LarkChannel({
+      provider: chatProvider,
+      maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
+      sendCard: (chatId, markdown) => sendCard(larkClient, chatId, markdown),
+      patchCard: (messageId, markdown) => patchCard(larkClient, messageId, markdown),
+      verificationToken: env.LARK_VERIFICATION_TOKEN,
+    }));
+  }
 
   const channelCtx: ChannelContext = {
     app,
@@ -102,22 +119,9 @@ export function createApp(): {
     },
   };
 
-  // WebChannel.start() registers routes synchronously
-  webChannel.start(channelCtx);
-
-  // --- Lark Bot (optional) ---
-  if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
-    const larkClient = createLarkClient(env);
-    const larkChannel = new LarkChannel({
-      provider: chatProvider,
-      maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
-      sendCard: (chatId, markdown) => sendCard(larkClient, chatId, markdown),
-      patchCard: (messageId, markdown) => patchCard(larkClient, messageId, markdown),
-      verificationToken: env.LARK_VERIFICATION_TOKEN,
-    });
-    larkChannel.start(channelCtx);
-    console.log("[init] Lark bot enabled");
-  }
+  // Start all registered channels (current implementations are sync)
+  channelManager.startAll(channelCtx);
+  console.log(`[init] Channels: ${channelManager.list().join(", ")}`);
 
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
