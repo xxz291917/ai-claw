@@ -1,6 +1,6 @@
 # AI Claw
 
-Company-level AI engine. Multi-user, extensible, integrable.
+An ultra-lightweight AI assistant engine inspired by OpenClaw — built for company-internal deployment with multi-user auth, sandboxed tool execution, multi-channel access (Web & Lark), and a fully extensible skill/tool system.
 
 ## Quick Start
 
