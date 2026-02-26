@@ -1,6 +1,7 @@
 import type { SessionManager } from "../sessions/manager.js";
 import type { ChatEvent } from "./types.js";
 import type { Session } from "../sessions/types.js";
+import type { SubagentManager } from "../subagent/manager.js";
 import { installSkill, uninstallSkill, searchSkills } from "./clawhub.js";
 import { scanSkillDirs } from "../skills/loader.js";
 import { formatMissingReason } from "../skills/eligibility.js";
@@ -13,6 +14,7 @@ export type CommandContext = {
   installDir: string;
   /** All skill directories (for /skills listing) */
   skillsDirs: string[];
+  subagentManager?: SubagentManager;
 };
 
 type CommandResult = {
@@ -47,6 +49,10 @@ export async function handleCommand(
       return handleUninstall(args, ctx);
     case "/search":
       return handleSearch(args, ctx);
+    case "/tasks":
+      return handleTasks(ctx);
+    case "/stop":
+      return handleStop(ctx);
     default:
       return null;
   }
@@ -156,9 +162,42 @@ function handleHelp(ctx: CommandContext): CommandResult {
       "  `/install <slug>` — Install a skill from ClawHub",
       "  `/uninstall <slug>` — Remove an installed skill",
       "  `/search <query>` — Search ClawHub for skills",
+      "  `/tasks` — List background tasks",
+      "  `/stop` — Cancel all running background tasks",
       "  `/help` — Show this help message",
     ].join("\n"),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Subagent task commands
+// ---------------------------------------------------------------------------
+
+function handleTasks(ctx: CommandContext): CommandResult {
+  if (!ctx.subagentManager) {
+    return textResult(ctx.session.id, "Background tasks not available.");
+  }
+  const tasks = ctx.subagentManager.listBySession(ctx.session.id);
+  if (tasks.length === 0) {
+    return textResult(ctx.session.id, "No background tasks.");
+  }
+  const lines = tasks.map((t) => {
+    const elapsed = t.completedAt
+      ? `${Math.round((t.completedAt - t.createdAt) / 1000)}s`
+      : `${Math.round((Date.now() - t.createdAt) / 1000)}s`;
+    return `- [${t.status}] ${t.task.slice(0, 80)} (${elapsed})`;
+  });
+  return textResult(ctx.session.id, `Background tasks (${tasks.length}):\n${lines.join("\n")}`);
+}
+
+function handleStop(ctx: CommandContext): CommandResult {
+  if (!ctx.subagentManager) {
+    return textResult(ctx.session.id, "Background tasks not available.");
+  }
+  const count = ctx.subagentManager.cancelBySession(ctx.session.id);
+  return textResult(ctx.session.id, count > 0
+    ? `${count} task(s) cancelled.`
+    : "No running tasks to cancel.");
 }
 
 // ---------------------------------------------------------------------------
