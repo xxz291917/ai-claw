@@ -1,0 +1,8 @@
+{
+  "example-server": {
+    "url": "http://localhost:3001/sse",
+    "headers": {
+      "Authorization": "Bearer your-token-here"
+    }
+  }
+}
