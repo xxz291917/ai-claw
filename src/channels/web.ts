@@ -22,7 +22,7 @@ export class WebChannel implements Channel {
   constructor(private config: WebChannelConfig) {}
 
   async start(ctx: ChannelContext): Promise<void> {
-    const { app, sessionManager, eventLog, memoryManager } = ctx;
+    const { app, sessionManager, eventLog, memoryManager, userSettingsManager } = ctx;
     const { provider, skillsDirs } = this.config;
 
     // Lightweight auth check — no session creation
@@ -75,6 +75,7 @@ export class WebChannel implements Channel {
         installDir,
         skillsDirs,
         subagentManager: this.config.subagentManager,
+        userSettingsManager,
       });
       if (cmdResult) {
         if (cmdResult.newSession) {
@@ -93,6 +94,7 @@ export class WebChannel implements Channel {
         sessionManager,
         eventLog,
         memoryManager,
+        userSettingsManager,
         maxHistoryMessages: this.config.maxHistoryMessages,
         maxHistoryTokens: this.config.maxHistoryTokens,
       };

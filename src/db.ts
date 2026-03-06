@@ -97,6 +97,12 @@ export function initDb(db: Database.Database): void {
       INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES ('delete', old.id, old.key, old.value);
       INSERT INTO memory_fts(rowid, key, value) VALUES (new.id, new.key, new.value);
     END;
+
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id TEXT PRIMARY KEY,
+      custom_prompt TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }
 

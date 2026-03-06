@@ -2,6 +2,7 @@ import type { SessionManager } from "../sessions/manager.js";
 import type { ChatEvent } from "./types.js";
 import type { Session } from "../sessions/types.js";
 import type { SubagentManager } from "../subagent/manager.js";
+import type { UserSettingsManager } from "../settings/manager.js";
 import { installSkill, uninstallSkill, searchSkills } from "./clawhub.js";
 import { scanSkillDirs } from "../skills/loader.js";
 import { formatMissingReason } from "../skills/eligibility.js";
@@ -15,6 +16,7 @@ export type CommandContext = {
   /** All skill directories (for /skills listing) */
   skillsDirs: string[];
   subagentManager?: SubagentManager;
+  userSettingsManager?: UserSettingsManager;
 };
 
 type CommandResult = {
@@ -53,6 +55,8 @@ export async function handleCommand(
       return handleTasks(ctx);
     case "/stop":
       return handleStop(ctx);
+    case "/prompt":
+      return handlePrompt(args, ctx);
     default:
       return null;
   }
@@ -164,9 +168,49 @@ function handleHelp(ctx: CommandContext): CommandResult {
       "  `/search <query>` — Search ClawHub for skills",
       "  `/tasks` — List background tasks",
       "  `/stop` — Cancel all running background tasks",
+      "  `/prompt show` — Show your custom system prompt",
+      "  `/prompt set <text>` — Set a custom system prompt",
+      "  `/prompt clear` — Remove your custom system prompt",
       "  `/help` — Show this help message",
     ].join("\n"),
   );
+}
+
+// ---------------------------------------------------------------------------
+// User settings commands
+// ---------------------------------------------------------------------------
+
+function handlePrompt(args: string[], ctx: CommandContext): CommandResult {
+  const { session, userSettingsManager } = ctx;
+  if (!userSettingsManager) {
+    return textResult(session.id, "User settings not available.");
+  }
+
+  const sub = args[0]?.toLowerCase();
+
+  if (!sub || sub === "show") {
+    const prompt = userSettingsManager.getCustomPrompt(session.userId);
+    if (!prompt) {
+      return textResult(session.id, "No custom prompt set. Use `/prompt set <text>` to add one.");
+    }
+    return textResult(session.id, `**Your custom prompt:**\n\n${prompt}`);
+  }
+
+  if (sub === "clear") {
+    userSettingsManager.clearCustomPrompt(session.userId);
+    return textResult(session.id, "Custom prompt cleared.");
+  }
+
+  if (sub === "set") {
+    const text = args.slice(1).join(" ").trim();
+    if (!text) {
+      return textResult(session.id, "Usage: `/prompt set <your prompt text>`");
+    }
+    userSettingsManager.setCustomPrompt(session.userId, text);
+    return textResult(session.id, `Custom prompt saved:\n\n${text}`);
+  }
+
+  return textResult(session.id, "Usage: `/prompt [show | set <text> | clear]`");
 }
 
 // ---------------------------------------------------------------------------

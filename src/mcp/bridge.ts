@@ -19,6 +19,8 @@ export type McpBridgeResult = {
   connected: { name: string; toolCount: number }[];
   /** Skipped server names with reasons */
   skipped: { name: string; reason: string }[];
+  /** Close all active MCP client connections */
+  close: () => Promise<void>;
 };
 
 /**
@@ -32,13 +34,17 @@ export async function bridgeMcpTools(config: McpConfig): Promise<McpBridgeResult
   const claudeServerConfigs: McpBridgeResult["claudeServerConfigs"] = {};
   const connected: McpBridgeResult["connected"] = [];
   const skipped: McpBridgeResult["skipped"] = [];
+  const clients: Client[] = [];
 
   const entries = Object.entries(config);
-  if (entries.length === 0) return { tools, claudeServerConfigs, connected, skipped };
+  if (entries.length === 0) {
+    return { tools, claudeServerConfigs, connected, skipped, close: async () => {} };
+  }
 
   for (const [serverName, serverConfig] of entries) {
     try {
       const { client, serverTools } = await connectAndListTools(serverName, serverConfig);
+      clients.push(client);
 
       // Build UnifiedToolDef for each tool (GenericProvider path)
       for (const mcpTool of serverTools) {
@@ -60,7 +66,17 @@ export async function bridgeMcpTools(config: McpConfig): Promise<McpBridgeResult
     }
   }
 
-  return { tools, claudeServerConfigs, connected, skipped };
+  const close = async () => {
+    for (const client of clients) {
+      try {
+        await client.close();
+      } catch {
+        // Best-effort — ignore close errors
+      }
+    }
+  };
+
+  return { tools, claudeServerConfigs, connected, skipped, close };
 }
 
 type McpToolInfo = {

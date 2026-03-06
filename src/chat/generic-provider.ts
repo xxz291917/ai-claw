@@ -122,6 +122,9 @@ export class GenericProvider implements ChatProvider {
       },
     }));
 
+    let consecutiveToolErrors = 0;
+    const MAX_CONSECUTIVE_TOOL_ERRORS = 3;
+
     for (let turn = 0; turn < maxTurns; turn++) {
       log.info(`[generic] turn ${turn + 1}/${maxTurns} — messages=${messages.length} (${Date.now() - t0}ms)`);
 
@@ -230,7 +233,7 @@ export class GenericProvider implements ChatProvider {
         }
       }
 
-      if (toolCalls.length === 0) {
+      if (toolCalls.filter(Boolean).length === 0) {
         log.info(`[generic] no tool calls — done (${Date.now() - t0}ms)`);
         yield { type: "done", sessionId: "", costUsd: 0 };
         return;
@@ -264,11 +267,14 @@ export class GenericProvider implements ChatProvider {
         if (handler) {
           try {
             result = await handler.handler(args, ctx);
+            consecutiveToolErrors = 0;
           } catch (err: any) {
             result = `Error: ${err.message}`;
+            consecutiveToolErrors++;
           }
         } else {
           result = `Unknown tool: ${tc.function.name}`;
+          consecutiveToolErrors++;
         }
         log.info(`[generic]   tool ${tc.function.name}: ${result.length} chars (${Date.now() - toolStart}ms)`);
 
@@ -277,6 +283,13 @@ export class GenericProvider implements ChatProvider {
 
         yield { type: "tool_result", tool: tc.function.name, output: result };
         messages.push({ role: "tool", tool_call_id: tc.id, content: result });
+      }
+
+      // Consecutive tool error guard — stop looping if tools keep failing
+      if (consecutiveToolErrors >= MAX_CONSECUTIVE_TOOL_ERRORS) {
+        log.warn(`[generic] ${consecutiveToolErrors} consecutive tool errors — stopping early`);
+        yield* this.finalSummaryTurn(messages);
+        return;
       }
 
       // Token budget check — if approaching limit, compact tool results and finish

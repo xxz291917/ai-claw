@@ -63,6 +63,8 @@ export class ClaudeProvider implements ChatProvider {
     });
 
     try {
+      let gotResult = false;
+
       for await (const message of q) {
         const elapsed = Date.now() - t0;
 
@@ -84,6 +86,7 @@ export class ClaudeProvider implements ChatProvider {
             input: { elapsed: msg.elapsed_time_seconds },
           };
         } else if (message.type === "result") {
+          gotResult = true;
           const msg = message as any;
           log.info(`[claude] result: subtype=${msg.subtype} cost=$${msg.total_cost_usd ?? 0} (${elapsed}ms)`);
           if (msg.subtype === "success") {
@@ -108,6 +111,13 @@ export class ClaudeProvider implements ChatProvider {
           // Log any other message types we haven't handled
           log.info(`[claude] message type=${message.type} (${elapsed}ms)`);
         }
+      }
+      // If the SDK loop ended without a result event, the auth token is likely
+      // invalid or expired (the SDK silently returns an empty iterator in that case).
+      if (!gotResult) {
+        log.error(`[claude] query() ended with no result — auth token may be invalid or expired (${Date.now() - t0}ms)`);
+        yield { type: "error", message: "Claude 认证失败，请检查 ANTHROPIC_API_KEY 或 CLAUDE_CODE_OAUTH_TOKEN 是否有效。" };
+        yield { type: "done", sessionId: "", costUsd: 0 };
       }
     } catch (err: any) {
       log.error(`[claude] stream error (${Date.now() - t0}ms):`, err.message ?? err);

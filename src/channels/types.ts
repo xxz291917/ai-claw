@@ -3,6 +3,7 @@ import type { ConversationResult } from "../chat/conversation.js";
 import type { ChatEvent } from "../chat/types.js";
 import type { SessionManager } from "../sessions/manager.js";
 import type { MemoryManager } from "../memory/manager.js";
+import type { UserSettingsManager } from "../settings/manager.js";
 import type { EventLog } from "../core/event-bus.js";
 
 export type InboundMessage = {
@@ -24,6 +25,7 @@ export type ChannelContext = {
   ) => Promise<ConversationResult>;
   sessionManager: SessionManager;
   memoryManager?: MemoryManager;
+  userSettingsManager?: UserSettingsManager;
   eventLog: EventLog;
 };
 

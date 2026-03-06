@@ -19,6 +19,7 @@ import { formatMissingReason } from "./skills/eligibility.js";
 import { EventLog } from "./core/event-bus.js";
 import { SessionManager } from "./sessions/manager.js";
 import { MemoryManager } from "./memory/manager.js";
+import { UserSettingsManager } from "./settings/manager.js";
 import { SubagentManager } from "./subagent/manager.js";
 import { loadMcpConfig } from "./mcp/config.js";
 import { bridgeMcpTools } from "./mcp/bridge.js";
@@ -37,6 +38,7 @@ export async function createApp(): Promise<{
   const eventLog = new EventLog(db);
   const sessionManager = new SessionManager(db);
   const memoryManager = new MemoryManager(db);
+  const userSettingsManager = new UserSettingsManager(db);
 
   const app = new Hono();
 
@@ -132,6 +134,7 @@ export async function createApp(): Promise<{
     sessionManager,
     eventLog,
     memoryManager,
+    userSettingsManager,
     handleMessage: async (msg, onEvent) => {
       return handleConversation({
         userId: msg.userId,
@@ -144,6 +147,7 @@ export async function createApp(): Promise<{
           sessionManager,
           eventLog,
           memoryManager,
+          userSettingsManager,
           maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
         },
         onEvent,
@@ -157,6 +161,16 @@ export async function createApp(): Promise<{
 
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
+
+  // Graceful shutdown — close MCP connections on process exit
+  const shutdown = async () => {
+    log.info("[shutdown] Closing MCP connections...");
+    await mcpBridge.close();
+    log.info("[shutdown] Done.");
+    process.exit(0);
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 
   return { app, db, eventLog };
 }

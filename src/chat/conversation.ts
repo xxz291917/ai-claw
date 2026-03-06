@@ -11,6 +11,7 @@ import type { SessionManager } from "../sessions/manager.js";
 import type { EventLog } from "../core/event-bus.js";
 import { createHubEvent } from "../core/hub-event.js";
 import type { MemoryManager } from "../memory/manager.js";
+import type { UserSettingsManager } from "../settings/manager.js";
 import type { MemoryFlushFn } from "./compaction.js";
 import { compactHistory } from "./compaction.js";
 import { extractMemories } from "../memory/extractor.js";
@@ -25,6 +26,7 @@ export type ConversationDeps = {
   sessionManager: SessionManager;
   eventLog: EventLog;
   memoryManager?: MemoryManager;
+  userSettingsManager?: UserSettingsManager;
   maxHistoryMessages?: number;
   maxHistoryTokens?: number;
 };
@@ -86,7 +88,7 @@ export async function handleConversation(
 ): Promise<ConversationResult> {
   const t0 = Date.now();
   const { userId, message, channel, channelId, deps, abortSignal } = req;
-  const { provider, sessionManager, eventLog, memoryManager } = deps;
+  const { provider, sessionManager, eventLog, memoryManager, userSettingsManager } = deps;
   const maxHistoryMessages = deps.maxHistoryMessages ?? 40;
   const maxHistoryTokens = deps.maxHistoryTokens ?? 0;
 
@@ -143,6 +145,10 @@ export async function handleConversation(
     identityParts.push(`当前用户: ${session.userId}`);
     if (memoryText) {
       identityParts.push(`你了解该用户的以下信息:\n${memoryText}`);
+    }
+    const customPrompt = userSettingsManager?.getCustomPrompt(session.userId);
+    if (customPrompt) {
+      identityParts.push(`用户自定义偏好和指令 (优先遵守):\n${customPrompt}`);
     }
     const systemPromptAddition = identityParts.join("\n\n");
 
