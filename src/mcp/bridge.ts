@@ -8,6 +8,7 @@ import { z } from "zod";
 
 const CONNECT_TIMEOUT_MS = 10_000;
 const PROBE_TIMEOUT_MS = 3_000;
+const CALL_TOOL_TIMEOUT_MS = 30_000;
 
 export type McpBridgeResult = {
   /** UnifiedToolDef[] for GenericProvider (bridged tools) */
@@ -144,7 +145,11 @@ function mcpToolToUnified(serverName: string, mcpTool: McpToolInfo, client: Clie
     },
     execute: async (args: any, _ctx: ToolContext) => {
       try {
-        const result = await client.callTool({ name: mcpTool.name, arguments: args });
+        const callPromise = client.callTool({ name: mcpTool.name, arguments: args });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Tool call timeout (${CALL_TOOL_TIMEOUT_MS / 1000}s)`)), CALL_TOOL_TIMEOUT_MS),
+        );
+        const result = await Promise.race([callPromise, timeoutPromise]);
         // Extract text content from MCP result
         const content = (result as any).content;
         if (Array.isArray(content)) {
