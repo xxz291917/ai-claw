@@ -1,11 +1,13 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { log } from "../logger.js";
 import type { McpConfig, McpServerConfig } from "./config.js";
 import type { UnifiedToolDef, ToolContext } from "../tools/types.js";
 import { z } from "zod";
 
 const CONNECT_TIMEOUT_MS = 10_000;
+const PROBE_TIMEOUT_MS = 3_000;
 
 export type McpBridgeResult = {
   /** UnifiedToolDef[] for GenericProvider (bridged tools) */
@@ -70,27 +72,48 @@ async function connectAndListTools(
   serverName: string,
   config: McpServerConfig,
 ): Promise<{ client: Client; serverTools: McpToolInfo[] }> {
-  const transport = new SSEClientTransport(new URL(config.url), {
-    eventSourceInit: {
-      fetch: (url: string | URL | Request, init?: RequestInit) =>
-        fetch(url, {
-          ...init,
-          headers: { ...(init?.headers as Record<string, string>), ...config.headers },
-        }),
-    },
-  });
+  const url = new URL(config.url);
+  const hasHeaders = Object.keys(config.headers).length > 0;
 
-  const client = new Client({ name: "ai-claw", version: "1.0.0" });
+  // Try Streamable HTTP first (modern), fall back to SSE (legacy).
+  // Each attempt needs a fresh Client since connect() can only be called once.
+  try {
+    const client = new Client({ name: "ai-claw", version: "1.0.0" });
+    const transport = new StreamableHTTPClientTransport(url, {
+      requestInit: hasHeaders ? { headers: config.headers } : undefined,
+    });
+    await connectWithTimeout(client, transport, PROBE_TIMEOUT_MS);
+    log.info(`[mcp] ${serverName}: connected via Streamable HTTP`);
+    const result = await client.listTools();
+    return { client, serverTools: result.tools as McpToolInfo[] };
+  } catch {
+    const client = new Client({ name: "ai-claw", version: "1.0.0" });
+    const transport = new SSEClientTransport(url, {
+      eventSourceInit: {
+        fetch: (reqUrl: string | URL | Request, init?: RequestInit) =>
+          fetch(reqUrl, {
+            ...init,
+            headers: { ...(init?.headers as Record<string, string>), ...config.headers },
+          }),
+      },
+    });
+    await connectWithTimeout(client, transport);
+    log.info(`[mcp] ${serverName}: connected via SSE (fallback)`);
+    const result = await client.listTools();
+    return { client, serverTools: result.tools as McpToolInfo[] };
+  }
+}
 
-  // Connect with timeout
+async function connectWithTimeout(
+  client: Client,
+  transport: SSEClientTransport | StreamableHTTPClientTransport,
+  timeoutMs = CONNECT_TIMEOUT_MS,
+): Promise<void> {
   const connectPromise = client.connect(transport);
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("Connection timeout")), CONNECT_TIMEOUT_MS),
+    setTimeout(() => reject(new Error("Connection timeout")), timeoutMs),
   );
   await Promise.race([connectPromise, timeoutPromise]);
-
-  const result = await client.listTools();
-  return { client, serverTools: result.tools as McpToolInfo[] };
 }
 
 /**
