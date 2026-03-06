@@ -114,7 +114,11 @@ function mcpToolToUnified(serverName: string, mcpTool: McpToolInfo, client: Clie
     name: prefixedName,
     description,
     inputSchema: zodProps,
-    parameters: mcpTool.inputSchema ?? { type: "object", properties: {} },
+    parameters: {
+      type: "object" as const,
+      properties: (mcpTool.inputSchema?.properties as Record<string, unknown>) ?? {},
+      ...(mcpTool.inputSchema?.required ? { required: mcpTool.inputSchema.required as string[] } : {}),
+    },
     execute: async (args: any, _ctx: ToolContext) => {
       try {
         const result = await client.callTool({ name: mcpTool.name, arguments: args });

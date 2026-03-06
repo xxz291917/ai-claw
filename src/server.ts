@@ -20,16 +20,18 @@ import { EventLog } from "./core/event-bus.js";
 import { SessionManager } from "./sessions/manager.js";
 import { MemoryManager } from "./memory/manager.js";
 import { SubagentManager } from "./subagent/manager.js";
+import { loadMcpConfig } from "./mcp/config.js";
+import { bridgeMcpTools } from "./mcp/bridge.js";
 import { log } from "./logger.js";
 import type Database from "better-sqlite3";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function createApp(): {
+export async function createApp(): Promise<{
   app: Hono;
   db: Database.Database;
   eventLog: EventLog;
-} {
+}> {
   const env = loadEnv();
   const db = createDb(resolve("data/ai-claw.db"));
   const eventLog = new EventLog(db);
@@ -69,6 +71,19 @@ export function createApp(): {
     log.info(`[init]   - ${s.name} (${formatMissingReason(s.eligibility)})`);
   }
 
+  // --- External MCP Servers ---
+  const mcpConfig = loadMcpConfig(process.cwd());
+  const mcpBridge = await bridgeMcpTools(mcpConfig);
+  if (mcpBridge.connected.length > 0 || mcpBridge.skipped.length > 0) {
+    log.info(`[init] MCP servers: ${mcpBridge.connected.length} connected, ${mcpBridge.skipped.length} skipped`);
+  }
+  for (const s of mcpBridge.connected) {
+    log.info(`[init]   + ${s.name} (${s.toolCount} tools)`);
+  }
+  for (const s of mcpBridge.skipped) {
+    log.warn(`[init]   - ${s.name} (${s.reason} — skipped)`);
+  }
+
   // --- SubagentManager (created early; registry is set lazily via getter since
   //     spawn() is only called at runtime, long after init completes) ---
   let registry: import("./chat/provider-registry.js").ProviderRegistry;
@@ -81,10 +96,11 @@ export function createApp(): {
   const toolSuite = buildToolSuite(env, skillsDirs, memoryManager, {
     subagentManager,
     defaultProvider: env.CHAT_PROVIDER,
+    extraTools: mcpBridge.tools,
   });
 
   // --- Chat Assistant ---
-  const setup = setupChatProvider(env, skillsDirs, toolSuite, memoryManager);
+  const setup = setupChatProvider(env, skillsDirs, toolSuite, memoryManager, mcpBridge.claudeServerConfigs);
   const chatProvider = setup.provider;
   registry = setup.registry;
 
@@ -145,8 +161,8 @@ export function createApp(): {
   return { app, db, eventLog };
 }
 
-export function startServer() {
-  const { app } = createApp();
+export async function startServer() {
+  const { app } = await createApp();
   const env = loadEnv(); // singleton — already parsed by createApp()
 
   serve({ fetch: app.fetch, port: env.PORT }, (info) => {
