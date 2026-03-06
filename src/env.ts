@@ -8,6 +8,7 @@ const envSchema = z.object({
 
   // AI providers
   ANTHROPIC_API_KEY: z.string().optional(),
+  CLAUDE_CODE_OAUTH_TOKEN: z.string().optional(),
   GH_TOKEN: z.string().optional(),
 
   // Sentry tool (optional — enables sentry_query tool for Chat)

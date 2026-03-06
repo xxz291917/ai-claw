@@ -114,8 +114,8 @@ export function buildDefaultRegistry(
     name: "claude",
     type: "claude",
     factory: () => {
-      if (!env.ANTHROPIC_API_KEY) {
-        throw new Error("ANTHROPIC_API_KEY is required for claude provider");
+      if (!env.ANTHROPIC_API_KEY && !env.CLAUDE_CODE_OAUTH_TOKEN) {
+        throw new Error("ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is required for claude provider");
       }
       return new ClaudeProvider({
         workspaceDir: env.WORKSPACE_DIR ?? ".",
