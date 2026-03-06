@@ -51,7 +51,7 @@ export function buildToolSuite(
   env: ToolSuiteEnv,
   skillsDirs: string[],
   memoryManager?: MemoryManager,
-  opts?: { subagentManager?: SubagentManager; defaultProvider?: string },
+  opts?: { subagentManager?: SubagentManager; defaultProvider?: string; extraTools?: UnifiedToolDef[] },
 ): ToolSuiteResult {
   const toolDefs: UnifiedToolDef[] = [
     createSkillReaderTool(skillsDirs),
@@ -103,6 +103,11 @@ export function buildToolSuite(
     toolDefs.push(
       createSpawnTool(opts.subagentManager, opts.defaultProvider ?? "claude"),
     );
+  }
+
+  // Append bridged MCP tools
+  if (opts?.extraTools) {
+    toolDefs.push(...opts.extraTools);
   }
 
   const { mcpTools, genericTools, descriptions } = registerTools(toolDefs);

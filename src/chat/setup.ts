@@ -33,8 +33,14 @@ export function setupChatProvider(
   skillsDirs: string[],
   existingSuite?: ToolSuiteResult,
   memoryManager?: MemoryManager,
+  claudeServerConfigs?: Record<string, { url: string; headers?: Record<string, string> }>,
 ): ChatSetupResult {
   const suite = existingSuite ?? buildToolSuite(env, skillsDirs, memoryManager);
+
+  const mergedMcpServers = {
+    ...suite.mcpServers,
+    ...(claudeServerConfigs ?? {}),
+  };
 
   const providerName = env.CHAT_PROVIDER ?? "claude";
 
@@ -57,7 +63,7 @@ export function setupChatProvider(
     {
       systemPrompt,
       skillsDirs,
-      mcpServers: suite.mcpServers,
+      mcpServers: mergedMcpServers,
       genericTools: suite.genericTools,
     },
   );
@@ -65,5 +71,5 @@ export function setupChatProvider(
   // Create the selected provider
   const provider = registry.create(providerName);
 
-  return { provider, registry, mcpServers: suite.mcpServers };
+  return { provider, registry, mcpServers: mergedMcpServers };
 }
