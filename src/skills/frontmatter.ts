@@ -53,6 +53,10 @@ function parseSimpleYaml(yaml: string): SkillMetadata {
   const result: Record<string, unknown> = {};
 
   for (const line of yaml.split("\n")) {
+    // Only parse top-level keys (no leading whitespace) to avoid
+    // nested YAML (e.g. workflow args/steps) overwriting top-level values.
+    if (line.length > 0 && (line[0] === " " || line[0] === "\t")) continue;
+
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
