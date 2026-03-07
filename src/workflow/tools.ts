@@ -114,5 +114,26 @@ export function createWorkflowTools(
     },
   };
 
-  return [runWorkflow, resumeWorkflow];
+  const listWorkflows: UnifiedToolDef = {
+    name: "list_workflows",
+    description:
+      "List active and paused workflows for the current user. " +
+      "Use this to discover pending approval workflows that can be resumed.",
+    inputSchema: {},
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+    execute: async (_input: Record<string, never>, ctx) => {
+      try {
+        const workflows = engine.listByUser(ctx.userId);
+        if (workflows.length === 0) return "No active workflows.";
+        return JSON.stringify(workflows, null, 2);
+      } catch (err: any) {
+        return `Error: ${err.message}`;
+      }
+    },
+  };
+
+  return [runWorkflow, resumeWorkflow, listWorkflows];
 }

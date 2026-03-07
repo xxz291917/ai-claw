@@ -39,11 +39,12 @@ describe("createWorkflowTools", () => {
     } catch {}
   });
 
-  it("creates run_workflow and resume_workflow tools", () => {
+  it("creates run_workflow, resume_workflow, and list_workflows tools", () => {
     const tools = createWorkflowTools(engine, [tmpDir]);
-    expect(tools).toHaveLength(2);
+    expect(tools).toHaveLength(3);
     expect(tools[0].name).toBe("run_workflow");
     expect(tools[1].name).toBe("resume_workflow");
+    expect(tools[2].name).toBe("list_workflows");
   });
 
   it("run_workflow executes a simple workflow", async () => {
@@ -56,6 +57,17 @@ describe("createWorkflowTools", () => {
     const parsed = JSON.parse(result);
     expect(parsed.status).toBe("completed");
     expect(parsed.steps[0].stdout).toContain("hi");
+  });
+
+  it("list_workflows returns empty when no active workflows", async () => {
+    const tools = createWorkflowTools(engine, [tmpDir]);
+    expect(tools).toHaveLength(3);
+    const listTool = tools.find((t) => t.name === "list_workflows")!;
+    const result = await listTool.execute(
+      {},
+      { userId: "alice", sessionId: "s1" },
+    );
+    expect(result).toBe("No active workflows.");
   });
 
   it("returns error for unknown workflow", async () => {

@@ -62,11 +62,53 @@ export class WorkflowEngine {
       }
     }
 
+    // Check for existing running workflow (paused is OK — user can have multiple paused)
+    const running = this.db
+      .prepare(
+        "SELECT id FROM workflow_executions WHERE user_id = ? AND status = 'running' LIMIT 1",
+      )
+      .get(ctx.userId) as { id: string } | undefined;
+    if (running) {
+      return {
+        status: "failed",
+        failed_step: "",
+        error: `Another workflow is already running (${running.id}). Wait for it to complete or cancel it first.`,
+        completed_steps: [],
+      };
+    }
+
     const execId = "wf_" + randomBytes(8).toString("hex");
     this.dbInsert(execId, definition.name, ctx.userId, ctx.sessionId, resolvedArgs);
     this.dbStoreDefinition(execId, definition);
 
     return this.executeSteps(execId, definition, resolvedArgs, 0, [], ctx);
+  }
+
+  /** List active (running/paused) workflows for a user. */
+  listByUser(userId: string): Array<{
+    id: string;
+    workflowName: string;
+    status: string;
+    currentStep: string | null;
+    sessionId: string;
+    createdAt: string;
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, workflow_name, status, current_step, session_id, created_at
+         FROM workflow_executions
+         WHERE user_id = ? AND status IN ('running', 'paused')
+         ORDER BY created_at DESC`,
+      )
+      .all(userId) as any[];
+    return rows.map((r) => ({
+      id: r.id,
+      workflowName: r.workflow_name,
+      status: r.status,
+      currentStep: r.current_step,
+      sessionId: r.session_id,
+      createdAt: r.created_at,
+    }));
   }
 
   async resume(

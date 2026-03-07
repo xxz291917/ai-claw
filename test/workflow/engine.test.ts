@@ -131,6 +131,46 @@ describe("WorkflowEngine", () => {
     }
   });
 
+  it("listByUser returns active workflows", async () => {
+    const APPROVAL_WF: WorkflowDefinition = {
+      name: "approval-wf",
+      args: { version: { required: true } },
+      steps: [
+        { id: "check", command: "echo ok" },
+        { id: "confirm", approval: { prompt: "Deploy v${version}?" } },
+        { id: "deploy", command: "echo deployed" },
+      ],
+    };
+    const result = await engine.run(
+      APPROVAL_WF,
+      { version: "2.0" },
+      { userId: "alice", sessionId: "s1" },
+    );
+    expect(result.status).toBe("needs_approval");
+
+    const list = engine.listByUser("alice");
+    expect(list).toHaveLength(1);
+    expect(list[0].workflowName).toBe("approval-wf");
+    expect(list[0].status).toBe("paused");
+
+    // Other user sees nothing
+    const otherList = engine.listByUser("bob");
+    expect(otherList).toHaveLength(0);
+  });
+
+  it("prevents running a second workflow while one is running", async () => {
+    // Insert a running record directly
+    db.prepare(
+      "INSERT INTO workflow_executions (id, workflow_name, user_id, session_id, status, args, step_results) VALUES (?, ?, ?, ?, 'running', '{}', '[]')",
+    ).run("wf_existing", "other-wf", "alice", "s1");
+
+    const result = await engine.run(SIMPLE_WORKFLOW, {}, { userId: "alice", sessionId: "s1" });
+    expect(result.status).toBe("failed");
+    if (result.status === "failed") {
+      expect(result.error).toContain("already running");
+    }
+  });
+
   it("fails on command exit code != 0", async () => {
     const wf: WorkflowDefinition = {
       name: "fail-wf",
