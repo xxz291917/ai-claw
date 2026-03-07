@@ -24,6 +24,8 @@ import { SubagentManager } from "./subagent/manager.js";
 import { loadMcpConfig } from "./mcp/config.js";
 import { bridgeMcpTools } from "./mcp/bridge.js";
 import { log } from "./logger.js";
+import { WorkflowEngine } from "./workflow/engine.js";
+import { createWorkflowTools } from "./workflow/tools.js";
 import type Database from "better-sqlite3";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -94,11 +96,15 @@ export async function createApp(): Promise<{
     sessionManager,
   });
 
+  // --- Workflow Engine ---
+  const workflowEngine = new WorkflowEngine({ db });
+
   // --- Tool Suite (includes spawn tool) ---
+  const workflowTools = createWorkflowTools(workflowEngine, skillsDirs);
   const toolSuite = buildToolSuite(env, skillsDirs, memoryManager, {
     subagentManager,
     defaultProvider: env.CHAT_PROVIDER,
-    extraTools: mcpBridge.tools,
+    extraTools: [...mcpBridge.tools, ...workflowTools],
   });
 
   // --- Chat Assistant ---
