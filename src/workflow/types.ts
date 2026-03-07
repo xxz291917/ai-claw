@@ -7,7 +7,7 @@ export type WorkflowArgDef = {
 
 /** A single step in a workflow definition */
 export type WorkflowStep =
-  | { id: string; command: string; expect?: string; timeout?: number }
+  | { id: string; command: string; expect?: string; timeout?: number; output?: string }
   | { id: string; type: "llm"; prompt: string }
   | { id: string; approval: { prompt: string } };
 
@@ -26,6 +26,7 @@ export type StepResult = {
   stdout?: string;
   result?: string;
   error?: string;
+  file?: string;
 };
 
 /** Persisted execution state */

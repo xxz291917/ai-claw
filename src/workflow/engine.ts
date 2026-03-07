@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import type Database from "better-sqlite3";
 import type {
   WorkflowDefinition,
@@ -166,6 +168,8 @@ export class WorkflowEngine {
     ctx: ExecutionContext,
   ): Promise<WorkflowResult> {
     const results: StepResult[] = [...previousResults];
+    const workdir = resolve("/tmp", `wf-${execId}`);
+    mkdirSync(workdir, { recursive: true });
 
     for (let i = startIdx; i < definition.steps.length; i++) {
       const step = definition.steps[i];
@@ -255,7 +259,9 @@ export class WorkflowEngine {
           }
         }
 
-        results.push({ id: step.id, ok: true, stdout: trimmedStdout });
+        const cmdStepTyped = step as Extract<WorkflowStep, { command: string }>;
+        const resolved = this.resolveOutput(cmdStepTyped.output, trimmedStdout, step.id, workdir);
+        results.push({ id: step.id, ok: true, stdout: resolved.stdout, file: resolved.file });
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         results.push({ id: step.id, ok: false, error: errorMsg });
@@ -288,6 +294,7 @@ export class WorkflowEngine {
         if (stepResult) {
           if (field === "stdout") return stepResult.stdout ?? "";
           if (field === "result") return stepResult.result ?? "";
+          if (field === "file") return stepResult.file ?? "";
           if (field === "error") return stepResult.error ?? "";
         }
         return "";
@@ -296,6 +303,34 @@ export class WorkflowEngine {
       if (expr in args) return args[expr];
       return "";
     });
+  }
+
+  private resolveOutput(
+    output: string | undefined,
+    stdout: string,
+    stepId: string,
+    workdir: string,
+  ): { stdout: string; file?: string } {
+    if (!output) return { stdout };
+
+    const colonIdx = output.indexOf(":");
+    const handler = colonIdx === -1 ? output : output.slice(0, colonIdx);
+    const args = colonIdx === -1 ? undefined : output.slice(colonIdx + 1);
+
+    if (handler === "file") {
+      const filename = args || `${stepId}.out`;
+      const filePath = resolve(workdir, filename);
+      writeFileSync(filePath, stdout);
+      // Keep only last 20 lines as summary in stdout
+      const lines = stdout.split("\n");
+      const summary = lines.length > 20
+        ? `... (${lines.length} lines, full output: ${filePath})\n${lines.slice(-20).join("\n")}`
+        : stdout;
+      return { stdout: summary, file: filePath };
+    }
+
+    // Unknown handler — fallback to inline
+    return { stdout };
   }
 
   private execCommand(

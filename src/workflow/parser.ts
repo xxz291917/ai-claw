@@ -229,6 +229,7 @@ function parseOneStep(chunk: string[]): WorkflowStep | null {
     const step: WorkflowStep = { id, command: props.command };
     if ("expect" in props) (step as any).expect = props.expect;
     if ("timeout" in props) (step as any).timeout = parseInt(props.timeout, 10);
+    if ("output" in props) (step as any).output = props.output;
     return step;
   }
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { readFileSync, existsSync } from "node:fs";
 import { WorkflowEngine } from "../../src/workflow/engine.js";
 import { createTestDb } from "../helpers.js";
 import type { WorkflowDefinition } from "../../src/workflow/types.js";
@@ -181,6 +182,48 @@ describe("WorkflowEngine", () => {
     expect(result.status).toBe("failed");
     if (result.status === "failed") {
       expect(result.failed_step).toBe("bad");
+    }
+  });
+
+  it("writes stdout to file when output: file is set", async () => {
+    const wf: WorkflowDefinition = {
+      name: "file-output-wf",
+      args: {},
+      steps: [
+        { id: "big", command: "seq 1 100", output: "file" },
+        { id: "check", command: "cat ${big.file} | grep -c ." },
+      ],
+    };
+    const result = await engine.run(wf, {}, { userId: "alice", sessionId: "s1" });
+    expect(result.status).toBe("completed");
+    if (result.status === "completed") {
+      // big step should have file path
+      expect(result.steps[0].file).toBeTruthy();
+      expect(existsSync(result.steps[0].file!)).toBe(true);
+      // File should contain full output
+      const fileContent = readFileSync(result.steps[0].file!, "utf-8");
+      expect(fileContent.split("\n").filter(Boolean)).toHaveLength(100);
+      // stdout should be summary (last 20 lines)
+      expect(result.steps[0].stdout).toContain("...");
+      // check step should have used the file
+      expect(result.steps[1].stdout).toContain("100");
+    }
+  });
+
+  it("writes to custom filename with output: file:name", async () => {
+    const wf: WorkflowDefinition = {
+      name: "named-file-wf",
+      args: {},
+      steps: [
+        { id: "data", command: "echo hello", output: "file:data.txt" },
+      ],
+    };
+    const result = await engine.run(wf, {}, { userId: "alice", sessionId: "s1" });
+    expect(result.status).toBe("completed");
+    if (result.status === "completed") {
+      expect(result.steps[0].file).toContain("data.txt");
+      const content = readFileSync(result.steps[0].file!, "utf-8").trim();
+      expect(content).toBe("hello");
     }
   });
 });

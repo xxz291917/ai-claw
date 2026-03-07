@@ -87,6 +87,29 @@ describe("parseWorkflowFromSkill", () => {
     expect(wf.onFailure).toBe("步骤 ${failed_step} 失败: ${error}");
   });
 
+  it("parses output field on command steps", () => {
+    const content = `---
+name: output-test
+workflow:
+  args: {}
+  steps:
+    - id: build
+      command: npm run build
+      output: file
+    - id: report
+      command: npm test
+      output: file:test-report.txt
+---
+# Test
+`;
+    const wf = parseWorkflowFromSkill(content);
+    expect(wf).not.toBeNull();
+    const step0 = wf!.steps[0] as any;
+    expect(step0.output).toBe("file");
+    const step1 = wf!.steps[1] as any;
+    expect(step1.output).toBe("file:test-report.txt");
+  });
+
   it("parses llm steps with multi-line prompt", () => {
     const wf = parseWorkflowFromSkill(LLM_SKILL_CONTENT);
     expect(wf).not.toBeNull();
