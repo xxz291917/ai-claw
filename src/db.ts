@@ -103,6 +103,23 @@ export function initDb(db: Database.Database): void {
       custom_prompt TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS workflow_executions (
+      id TEXT PRIMARY KEY,
+      workflow_name TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      args TEXT NOT NULL DEFAULT '{}',
+      current_step TEXT,
+      step_results TEXT NOT NULL DEFAULT '[]',
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workflow_executions_session
+      ON workflow_executions(session_id, status);
   `);
 }
 
