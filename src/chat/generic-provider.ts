@@ -107,7 +107,7 @@ export class GenericProvider implements ChatProvider {
       }
     }
     messages.push({ role: "user", content: req.message });
-    log.info(`[generic] stream start — model=${this.config.model} messages=${messages.length} tokens≈${estimateTokens(messages)}`);
+    log.info(`[generic] stream start — model=${this.config.model} messages=${messages.length} tokens≈${estimateTokens(messages)} tools=${(this.config.tools ?? []).length}`);
 
     const allTools: ToolDef[] = this.config.tools ?? [];
     const toolMap = new Map(allTools.map((t) => [t.name, t]));
