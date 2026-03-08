@@ -56,7 +56,7 @@ export async function createApp(): Promise<{
 
   // --- Skills Directories (builtin + extra) ---
   const skillsDirs = [
-    resolve(__dirname, "skills"),
+    resolve(__dirname, "skills/builtins"),
     ...env.SKILLS_EXTRA_DIRS.split(",")
       .map((d) => d.trim())
       .filter(Boolean)

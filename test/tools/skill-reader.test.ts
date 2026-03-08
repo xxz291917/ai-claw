@@ -7,7 +7,7 @@ import { createSkillReaderTool } from "../../src/tools/skill-reader.js";
 const ctx = { userId: "test", sessionId: "test" };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const builtinDir = resolve(__dirname, "../../src/skills");
+const builtinDir = resolve(__dirname, "../../src/skills/builtins");
 
 // ClawHub-format test directory
 const tmpExtra = resolve("/tmp", `skill-reader-test-${Date.now()}`);
