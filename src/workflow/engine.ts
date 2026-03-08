@@ -10,6 +10,7 @@ import type {
   WorkflowStep,
 } from "./types.js";
 import { stepType } from "./types.js";
+import type { ChatProvider } from "../chat/types.js";
 
 export type LlmHandler = (prompt: string) => Promise<string>;
 
@@ -42,6 +43,17 @@ export class WorkflowEngine {
     this.llmHandler = handler;
   }
 
+  /** Wire a ChatProvider as the LLM backend — adaptation handled internally. */
+  setChatProvider(provider: ChatProvider): void {
+    this.llmHandler = async (prompt: string) => {
+      let result = "";
+      for await (const event of provider.stream({ message: prompt })) {
+        if (event.type === "text") result += event.content;
+      }
+      return result.trim();
+    };
+  }
+
   async run(
     definition: WorkflowDefinition,
     args: Record<string, string>,
@@ -64,17 +76,20 @@ export class WorkflowEngine {
       }
     }
 
-    // Check for existing running workflow (paused is OK — user can have multiple paused)
-    const running = this.db
+    // Only one active workflow per user (running or paused)
+    const active = this.db
       .prepare(
-        "SELECT id FROM workflow_executions WHERE user_id = ? AND status = 'running' LIMIT 1",
+        "SELECT id, status FROM workflow_executions WHERE user_id = ? AND status IN ('running', 'paused') LIMIT 1",
       )
-      .get(ctx.userId) as { id: string } | undefined;
-    if (running) {
+      .get(ctx.userId) as { id: string; status: string } | undefined;
+    if (active) {
+      const hint = active.status === "paused"
+        ? `A workflow is paused (${active.id}). Approve, revise, or reject it first.`
+        : `Another workflow is already running (${active.id}). Wait for it to complete or cancel it first.`;
       return {
         status: "failed",
         failed_step: "",
-        error: `Another workflow is already running (${running.id}). Wait for it to complete or cancel it first.`,
+        error: hint,
         completed_steps: [],
       };
     }
@@ -115,8 +130,9 @@ export class WorkflowEngine {
 
   async resume(
     token: string,
-    approve: boolean,
+    action: "approve" | "revise" | "reject",
     userId: string,
+    feedback?: string,
   ): Promise<WorkflowResult> {
     const row = this.dbGet(token);
     if (!row) throw new Error(`Workflow execution not found: ${token}`);
@@ -134,28 +150,72 @@ export class WorkflowEngine {
     const approvalIdx = definition.steps.findIndex((s) => s.id === currentStepId);
     if (approvalIdx === -1) throw new Error(`Step not found: ${currentStepId}`);
 
-    if (!approve) {
-      // User rejected — fail the workflow
+    const approvalStep = definition.steps[approvalIdx] as Extract<WorkflowStep, { approval: unknown }>;
+    const ctx: ExecutionContext = { userId: row.user_id, sessionId: row.session_id };
+
+    if (action === "reject") {
       const result: WorkflowResult = {
         status: "failed",
         failed_step: currentStepId!,
-        error: "Approval denied by user",
+        error: feedback || "Rejected by user",
         completed_steps: previousResults,
       };
-      this.dbUpdate(token, "cancelled", currentStepId, previousResults, "Approval denied by user");
+      this.dbUpdate(token, "cancelled", currentStepId, previousResults, feedback || "Rejected by user");
       return result;
     }
 
-    // Add the approval step as completed
+    if (action === "revise") {
+      const goto = approvalStep.approval.goto;
+      if (!goto) throw new Error("This approval step does not support revision (no goto configured)");
+
+      const gotoIdx = definition.steps.findIndex((s) => s.id === goto);
+      if (gotoIdx === -1) throw new Error(`Goto target step not found: ${goto}`);
+
+      // Get current revision number from the latest approval result for this step
+      let lastRevision = 0;
+      for (let j = previousResults.length - 1; j >= 0; j--) {
+        if (previousResults[j].id === currentStepId) {
+          lastRevision = previousResults[j].revision ?? 0;
+          break;
+        }
+      }
+      const maxRevisions = approvalStep.approval.max_revisions;
+      if (maxRevisions !== undefined && lastRevision >= maxRevisions) {
+        const errorMsg = `Maximum revisions reached (${maxRevisions})`;
+        this.dbUpdate(token, "failed", currentStepId, previousResults, errorMsg);
+        return {
+          status: "failed",
+          failed_step: currentStepId!,
+          error: errorMsg,
+          completed_steps: previousResults,
+        };
+      }
+
+      // Keep only results from steps before the goto target
+      const cleanedResults = previousResults.filter((r) => {
+        const rIdx = definition.steps.findIndex((s) => s.id === r.id);
+        return rIdx < gotoIdx;
+      });
+
+      // Append the approval step's revise result (preserves feedback for ${step.result})
+      cleanedResults.push({
+        id: currentStepId!,
+        ok: true,
+        result: feedback || "",
+        revision: lastRevision + 1,
+      });
+
+      return this.executeSteps(token, definition, args, gotoIdx, cleanedResults, ctx);
+    }
+
+    // action === "approve"
     const approvalResult: StepResult = {
       id: currentStepId!,
       ok: true,
-      result: "approved",
+      result: feedback || "approved",
     };
     const allResults = [...previousResults, approvalResult];
 
-    // Continue from the step after the approval
-    const ctx: ExecutionContext = { userId: row.user_id, sessionId: row.session_id };
     return this.executeSteps(token, definition, args, approvalIdx + 1, allResults, ctx);
   }
 
@@ -183,11 +243,19 @@ export class WorkflowEngine {
 
         this.dbUpdate(execId, "paused", step.id, results, null);
 
+        // Get revision number from the latest result for this approval step
+        let revision = 0;
+        for (let j = results.length - 1; j >= 0; j--) {
+          if (results[j].id === step.id) { revision = results[j].revision ?? 0; break; }
+        }
+
         return {
           status: "needs_approval",
           prompt,
           token: execId,
           completed_steps: results,
+          revision,
+          max_revisions: approvalStep.approval.max_revisions,
         };
       }
 
@@ -290,12 +358,16 @@ export class WorkflowEngine {
       if (dotIdx !== -1) {
         const stepId = expr.slice(0, dotIdx);
         const field = expr.slice(dotIdx + 1);
-        const stepResult = results.find((r) => r.id === stepId);
+        let stepResult: StepResult | undefined;
+        for (let j = results.length - 1; j >= 0; j--) {
+          if (results[j].id === stepId) { stepResult = results[j]; break; }
+        }
         if (stepResult) {
           if (field === "stdout") return stepResult.stdout ?? "";
           if (field === "result") return stepResult.result ?? "";
           if (field === "file") return stepResult.file ?? "";
           if (field === "error") return stepResult.error ?? "";
+          if (field === "revision") return String(stepResult.revision ?? 0);
         }
         return "";
       }

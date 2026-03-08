@@ -4,6 +4,7 @@ import type { WorkflowEngine } from "./engine.js";
 import { parseWorkflowFromSkill } from "./parser.js";
 import { scanSkillDirs } from "../skills/loader.js";
 import { readFileSync } from "node:fs";
+import { log } from "../logger.js";
 
 /**
  * Create run_workflow and resume_workflow tools.
@@ -57,6 +58,7 @@ export function createWorkflowTools(
       required: ["workflow"],
     },
     execute: async (input: { workflow: string; args?: string }, ctx) => {
+      log.info(`[workflow] run_workflow: workflow=${input.workflow} args=${input.args ?? "{}"} userId=${ctx.userId}`);
       try {
         // Re-scan to pick up new skills at invocation time
         const skills = scanSkillDirs(skillsDirs);
@@ -80,32 +82,49 @@ export function createWorkflowTools(
   const resumeWorkflow: UnifiedToolDef = {
     name: "resume_workflow",
     description:
-      "Resume a paused workflow after user approval. " +
-      "Pass the token from a previous run_workflow result and the user's decision.",
+      "Resume a paused workflow after user decision. " +
+      "Actions: 'approve' to continue, 'revise' to go back and redo with feedback (if goto is configured), 'reject' to cancel. " +
+      "Token is optional — if omitted, automatically resumes the user's latest paused workflow. " +
+      "Feedback text is stored in the approval step's result and can be referenced by subsequent steps via ${step_id.result}.",
     inputSchema: {
-      token: z.string().describe("Resume token from needs_approval result"),
-      approve: z.boolean().describe("true to continue, false to cancel"),
+      token: z.string().optional().describe("Resume token (optional, auto-detects latest paused workflow if omitted)"),
+      action: z.enum(["approve", "revise", "reject"]).describe("User decision: approve to continue, revise to redo with feedback, reject to cancel"),
+      feedback: z.string().optional().describe("User feedback text, stored in approval step result for subsequent steps"),
     },
     parameters: {
       type: "object",
       properties: {
         token: {
           type: "string",
-          description: "Resume token from needs_approval result",
+          description: "Resume token (optional, auto-detects latest paused workflow if omitted)",
         },
-        approve: {
-          type: "boolean",
-          description: "true to continue, false to cancel",
+        action: {
+          type: "string",
+          enum: ["approve", "revise", "reject"],
+          description: "User decision: approve to continue, revise to redo with feedback, reject to cancel",
+        },
+        feedback: {
+          type: "string",
+          description: "User feedback text, stored in approval step result for subsequent steps",
         },
       },
-      required: ["token", "approve"],
+      required: ["action"],
     },
-    execute: async (input: { token: string; approve: boolean }, ctx) => {
+    execute: async (input: { token?: string; action: "approve" | "revise" | "reject"; feedback?: string }, ctx) => {
+      let token = input.token;
+      if (!token) {
+        // Auto-find the user's latest paused workflow
+        const paused = engine.listByUser(ctx.userId).find((w) => w.status === "paused");
+        if (!paused) return "Error: No paused workflow found for current user";
+        token = paused.id;
+      }
+      log.info(`[workflow] resume_workflow: token=${token} action=${input.action} feedback=${input.feedback ?? "(none)"} userId=${ctx.userId}`);
       try {
         const result = await engine.resume(
-          input.token,
-          input.approve,
+          token,
+          input.action,
           ctx.userId,
+          input.feedback,
         );
         return JSON.stringify(result, null, 2);
       } catch (err: any) {

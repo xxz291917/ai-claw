@@ -110,6 +110,40 @@ workflow:
     expect(step1.output).toBe("file:test-report.txt");
   });
 
+  it("parses approval with goto and max_revisions", () => {
+    const content = `---
+name: goto-test
+workflow:
+  args: {}
+  steps:
+    - id: draft
+      command: echo draft
+    - id: review
+      approval:
+        prompt: "Review the draft"
+        goto: draft
+        max_revisions: 3
+    - id: done
+      command: echo done
+---
+# Test
+`;
+    const wf = parseWorkflowFromSkill(content);
+    expect(wf).not.toBeNull();
+    const reviewStep = wf!.steps[1] as any;
+    expect(reviewStep.approval.prompt).toBe("Review the draft");
+    expect(reviewStep.approval.goto).toBe("draft");
+    expect(reviewStep.approval.max_revisions).toBe(3);
+  });
+
+  it("parses approval without goto (backward compatible)", () => {
+    const wf = parseWorkflowFromSkill(SKILL_CONTENT)!;
+    const approvalStep = wf.steps[1] as any;
+    expect(approvalStep.approval.prompt).toBe("确认发布 v${version}？");
+    expect(approvalStep.approval.goto).toBeUndefined();
+    expect(approvalStep.approval.max_revisions).toBeUndefined();
+  });
+
   it("parses llm steps with multi-line prompt", () => {
     const wf = parseWorkflowFromSkill(LLM_SKILL_CONTENT);
     expect(wf).not.toBeNull();

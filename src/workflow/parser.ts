@@ -150,6 +150,9 @@ function parseOneStep(chunk: string[]): WorkflowStep | null {
   let multiLineLines: string[] = [];
   let multiLineBaseIndent = 0;
   let approvalPrompt: string | undefined;
+  let approvalGoto: string | undefined;
+  let approvalMaxRevisions: number | undefined;
+  let inApprovalBlock = false;
 
   for (let i = 0; i < chunk.length; i++) {
     const line = chunk[i];
@@ -183,12 +186,26 @@ function parseOneStep(chunk: string[]): WorkflowStep | null {
 
     // Nested approval block
     if (trimmed === "approval:") {
-      // Next lines should have prompt:
+      inApprovalBlock = true;
       continue;
     }
-    if (trimmed.startsWith("prompt:") && i > 0 && chunk[i - 1].trim() === "approval:") {
-      const val = trimmed.slice(7).trim();
-      approvalPrompt = unquote(val);
+    if (inApprovalBlock) {
+      const colonIdx2 = trimmed.indexOf(":");
+      if (colonIdx2 !== -1) {
+        const ak = trimmed.slice(0, colonIdx2).trim();
+        const av = trimmed.slice(colonIdx2 + 1).trim();
+        if (ak === "prompt") approvalPrompt = unquote(av);
+        else if (ak === "goto") approvalGoto = unquote(av);
+        else if (ak === "max_revisions") approvalMaxRevisions = parseInt(av, 10);
+      }
+      // Stay in approval block as long as lines are indented deeper than step level
+      if (i + 1 < chunk.length) {
+        const nextTrimmed = chunk[i + 1].trim();
+        // If next line is a new top-level step property (not further indented under approval), exit block
+        if (nextTrimmed && !nextTrimmed.startsWith("-") && getIndent(chunk[i + 1]) <= getIndent(chunk[1] ?? chunk[0])) {
+          inApprovalBlock = false;
+        }
+      }
       continue;
     }
 
@@ -220,7 +237,10 @@ function parseOneStep(chunk: string[]): WorkflowStep | null {
 
   // Determine step type
   if (approvalPrompt !== undefined) {
-    return { id, approval: { prompt: approvalPrompt } };
+    const approval: { prompt: string; goto?: string; max_revisions?: number } = { prompt: approvalPrompt };
+    if (approvalGoto) approval.goto = approvalGoto;
+    if (approvalMaxRevisions !== undefined && !isNaN(approvalMaxRevisions)) approval.max_revisions = approvalMaxRevisions;
+    return { id, approval };
   }
   if (props.type === "llm" && props.prompt !== undefined) {
     return { id, type: "llm" as const, prompt: props.prompt };

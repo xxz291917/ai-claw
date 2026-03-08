@@ -9,7 +9,7 @@ export type WorkflowArgDef = {
 export type WorkflowStep =
   | { id: string; command: string; expect?: string; timeout?: number; output?: string }
   | { id: string; type: "llm"; prompt: string }
-  | { id: string; approval: { prompt: string } };
+  | { id: string; approval: { prompt: string; goto?: string; max_revisions?: number } };
 
 /** Parsed workflow definition from skill frontmatter */
 export type WorkflowDefinition = {
@@ -27,6 +27,7 @@ export type StepResult = {
   result?: string;
   error?: string;
   file?: string;
+  revision?: number;
 };
 
 /** Persisted execution state */
@@ -47,7 +48,7 @@ export type WorkflowExecution = {
 /** Return value from engine.run() and engine.resume() */
 export type WorkflowResult =
   | { status: "completed"; steps: StepResult[] }
-  | { status: "needs_approval"; prompt: string; token: string; completed_steps: StepResult[] }
+  | { status: "needs_approval"; prompt: string; token: string; completed_steps: StepResult[]; revision?: number; max_revisions?: number }
   | { status: "failed"; failed_step: string; error: string; completed_steps: StepResult[] };
 
 /** Helper to classify step type */

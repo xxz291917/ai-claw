@@ -112,6 +112,9 @@ export async function createApp(): Promise<{
   const chatProvider = setup.provider;
   registry = setup.registry;
 
+  // --- Wire LLM handler for workflow engine ---
+  workflowEngine.setChatProvider(chatProvider);
+
   // --- Channels ---
   const channelManager = new ChannelManager();
 
