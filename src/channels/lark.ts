@@ -140,7 +140,11 @@ export class LarkChannel implements Channel {
       // 6. Fire-and-forget: respond immediately, process async
       const openId = sender.sender_id.open_id;
       const chatId = message.chat_id;
-      const userId = `lark:${openId}`;
+      // Group chat: shared team identity (shared session/workflow/memory)
+      // P2P chat: individual identity (isolated session/memory)
+      const userId = message.chat_type === "group"
+        ? `lark-group:${chatId}`
+        : `lark:${openId}`;
 
       // Kick off async processing (not awaited)
       this.processMessage(ctx, userId, chatId, text).catch((err) => {
