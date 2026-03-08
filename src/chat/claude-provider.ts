@@ -1,4 +1,27 @@
+/**
+ * Claude Agent SDK provider — wraps the SDK's query() to spawn Claude CLI
+ * as a subprocess.
+ *
+ * ## Known pitfalls (2026-03-08)
+ *
+ * The SDK spawns `node cli.js` as a child process. Two environment issues
+ * can cause it to fail silently or with misleading errors:
+ *
+ * 1. **Cannot run as root** — Claude CLI refuses `--allow-dangerously-skip-permissions`
+ *    under root/sudo for security reasons (exits with code 1). The service must
+ *    run as a non-root user (e.g. via PM2 `uid` option).
+ *
+ * 2. **PM2 uid switch doesn't update HOME/USER env vars** — PM2 changes the
+ *    process uid but leaves `process.env.HOME` pointing to `/root`. The CLI
+ *    then tries to write `~/.claude.json` to `/root/` and gets EACCES, causing
+ *    it to hang indefinitely with no output. Fix: use `os.userInfo()` (reads
+ *    /etc/passwd by actual uid) to set correct HOME/USER in the subprocess env.
+ */
+
 import { query } from "@anthropic-ai/claude-agent-sdk";
+// userInfo() reads user info from /etc/passwd based on actual process uid,
+// unlike os.homedir() which just reads process.env.HOME. See pitfall #2 above.
+import { userInfo } from "node:os";
 import type { ChatProvider, ChatEvent, ChatRequest } from "./types.js";
 import { toolRequestContext } from "../tools/request-context.js";
 import { log } from "../logger.js";
@@ -47,7 +70,7 @@ export class ClaudeProvider implements ChatProvider {
         systemPrompt,
         tools: { type: "preset", preset: "claude_code" },
         mcpServers: this.config.mcpServers as any,
-        permissionMode: "bypassPermissions",
+        permissionMode: "bypassPermissions",       // NOTE: requires non-root user (see pitfall #1)
         allowDangerouslySkipPermissions: true,
         maxTurns: this.config.maxTurns ?? 30,
         maxBudgetUsd: this.config.maxBudgetUsd ?? 2.0,
@@ -55,7 +78,7 @@ export class ClaudeProvider implements ChatProvider {
         persistSession: true,
         ...(req.sessionId ? { resume: req.sessionId } : {}),
         abortController,
-        stderr: (data: string) => log.error(`[claude] stderr: ${data.trimEnd()}`),
+        stderr: (data: string) => log.warn(`[claude] stderr: ${data.trimEnd()}`),
         env: (() => {
           // Strip all Claude/subagent env vars so the spawned CLI
           // runs as a fresh top-level process, not in nested subagent mode.
@@ -65,6 +88,14 @@ export class ClaudeProvider implements ChatProvider {
               delete merged[key];
             }
           }
+          // Ensure HOME is writable by the current uid (PM2 uid switch
+          // leaves HOME=/root which the non-root user can't write to).
+          // userInfo() reads from /etc/passwd based on actual uid, not env.
+          try {
+            const info = userInfo();
+            if (info.homedir) merged.HOME = info.homedir;
+            if (info.username) merged.USER = info.username;
+          } catch { /* best-effort */ }
           return merged;
         })(),
       },
@@ -78,16 +109,12 @@ export class ClaudeProvider implements ChatProvider {
 
         if (message.type === "stream_event") {
           const event = (message as any).event;
-          // Log non-delta events for visibility
-          if (event?.type && event.type !== "content_block_delta") {
-            log.info(`[claude] stream_event: ${event.type} (${elapsed}ms)`);
-          }
           if (event?.type === "content_block_delta" && event.delta?.text) {
             yield { type: "text", content: event.delta.text };
           }
         } else if (message.type === "tool_progress") {
           const msg = message as any;
-          log.info(`[claude] tool_progress: ${msg.tool_name ?? "?"} elapsed=${msg.elapsed_time_seconds}s (${elapsed}ms)`);
+          log.info(`[claude] tool: ${msg.tool_name ?? "?"} (${msg.elapsed_time_seconds}s, ${elapsed}ms)`);
           yield {
             type: "tool_use",
             tool: msg.tool_name ?? "unknown",
@@ -115,9 +142,6 @@ export class ClaudeProvider implements ChatProvider {
               costUsd: msg.total_cost_usd ?? 0,
             };
           }
-        } else {
-          // Log any other message types we haven't handled
-          log.info(`[claude] message type=${message.type} (${elapsed}ms)`);
         }
       }
       // If the SDK loop ended without a result event, the auth token is likely
