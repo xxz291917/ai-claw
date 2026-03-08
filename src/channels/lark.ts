@@ -23,6 +23,8 @@ export type LarkChannelConfig = {
   maxHistoryTokens?: number;
   sendCard: (chatId: string, markdown: string) => Promise<string>;
   patchCard: (messageId: string, markdown: string) => Promise<void>;
+  /** Fetch recent group chat messages for context injection. */
+  fetchGroupContext?: (chatId: string, afterMessageId?: string) => Promise<string>;
   verificationToken?: string;
 };
 
@@ -92,6 +94,9 @@ type LarkEventV2 = {
 export class LarkChannel implements Channel {
   readonly name = "lark";
 
+  /** Track last seen message_id per chatId for incremental context fetching. */
+  private lastMessageId = new Map<string, string>();
+
   constructor(private config: LarkChannelConfig) {}
 
   async start(ctx: ChannelContext): Promise<void> {
@@ -146,8 +151,10 @@ export class LarkChannel implements Channel {
         ? `lark-group:${chatId}`
         : `lark:${openId}`;
 
+      const isGroup = message.chat_type === "group";
+
       // Kick off async processing (not awaited)
-      this.processMessage(ctx, userId, chatId, text).catch((err) => {
+      this.processMessage(ctx, userId, chatId, text, isGroup, message.message_id).catch((err) => {
         console.error("[lark] async processing error:", err);
       });
 
@@ -164,18 +171,39 @@ export class LarkChannel implements Channel {
     userId: string,
     chatId: string,
     text: string,
+    isGroup?: boolean,
+    messageId?: string,
   ): Promise<void> {
     const { sessionManager, eventLog, memoryManager } = ctx;
-    const { provider, sendCard, patchCard } = this.config;
+    const { provider, sendCard, patchCard, fetchGroupContext } = this.config;
 
     // 1. Send "thinking" card
     const cardMessageId = await sendCard(chatId, "思考中...");
 
-    // 2. Find or reuse existing session
+    // 2. For group chats, fetch incremental context
+    let enrichedText = text;
+    if (isGroup && fetchGroupContext) {
+      try {
+        const afterId = this.lastMessageId.get(chatId);
+        const context = await fetchGroupContext(chatId, afterId);
+        if (context) {
+          enrichedText = `[群聊上下文]\n${context}\n\n[当前消息]\n${text}`;
+        }
+      } catch (err: any) {
+        console.error("[lark] fetch group context error:", err.message ?? err);
+        // Non-fatal: proceed without context
+      }
+    }
+    // Update last seen message_id for next incremental fetch
+    if (messageId) {
+      this.lastMessageId.set(chatId, messageId);
+    }
+
+    // 3. Find or reuse existing session
     const existingSession = sessionManager.findActive(userId, "lark");
     const sessionId = existingSession?.id;
 
-    // 3. Build conversation deps
+    // 4. Build conversation deps
     const convDeps: ConversationDeps = {
       provider,
       sessionManager,
@@ -185,18 +213,18 @@ export class LarkChannel implements Channel {
       maxHistoryTokens: this.config.maxHistoryTokens,
     };
 
-    // 4. Run conversation pipeline
+    // 5. Run conversation pipeline
     try {
       const result = await handleConversation({
         userId,
-        message: text,
+        message: enrichedText,
         sessionId,
         channel: "lark",
         channelId: chatId,
         deps: convDeps,
       });
 
-      // 5. Patch the card with the final reply
+      // 6. Patch the card with the final reply
       const reply = result.text || result.error || "\uFF08\u65E0\u56DE\u590D\uFF09";
       await patchCard(cardMessageId, reply);
     } catch (err: any) {
