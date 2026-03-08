@@ -118,6 +118,7 @@ export class LarkChannel implements Channel {
 
       const event = body as LarkEventV2;
       const { message, sender } = event.event;
+      console.log(`[lark] webhook: chat_type=${message.chat_type} message_id=${message.message_id} chat_id=${message.chat_id}`);
 
       // 3. Only handle text messages
       if (message.message_type !== "text") {
