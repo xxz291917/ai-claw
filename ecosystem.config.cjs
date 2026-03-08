@@ -1,3 +1,8 @@
+// PM2 ecosystem config
+// NOTE: When CHAT_PROVIDER=claude on a root server, Claude CLI refuses
+// --allow-dangerously-skip-permissions. Need to run as non-root user:
+//   PM2_RUN_AS_USER=aiclaw pm2 start ecosystem.config.cjs --update-env
+// See src/chat/claude-provider.ts for details.
 module.exports = {
   apps: [
     {
