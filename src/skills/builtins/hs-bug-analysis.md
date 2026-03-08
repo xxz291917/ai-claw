@@ -2,8 +2,8 @@
 name: hs-bug-analysis
 description: "Structured workflow to analyze a bug or issue: gather context, locate root cause, and produce an actionable fix plan. Use when asked to investigate a bug, diagnose an error, or understand why something broke."
 tags: [debugging, analysis, quality]
-allowed-tools: bash_exec, file_read, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
-requires-bins: [gh]
+allowed-tools: bash_exec, file_read, web_fetch, sentry_query, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
+requires-env: [GH_TOKEN]
 ---
 
 # Bug Analysis Workflow
@@ -25,9 +25,10 @@ Collect these before starting (ask if missing):
 
 ### 1. Understand the symptom
 
-If an issue number is provided:
-```bash
-gh issue view <issue_number> --repo <repo>
+If an issue number is provided, use `web_fetch` to call GitHub API:
+```
+GET https://api.github.com/repos/<owner>/<repo>/issues/<issue_number>
+Headers: Authorization: Bearer ${GH_TOKEN}
 ```
 
 Summarize:
@@ -72,12 +73,13 @@ git -C <repo_path> show <commit_hash>
 
 ### 4. Check logs and related issues (if applicable)
 
-```bash
-# 如果有 Sentry 工具可用
+```
+# Sentry 错误详情
 sentry_query issue <issue_id>
 
-# GitHub 上是否有类似 issue
-gh issue list --repo <repo> --search "<keyword>" --state all
+# GitHub 搜索相关 issue（via API）
+GET https://api.github.com/search/issues?q=<keyword>+repo:<owner>/<repo>+state:all
+Headers: Authorization: Bearer ${GH_TOKEN}
 ```
 
 ### 5. Root cause analysis
