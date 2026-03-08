@@ -55,10 +55,18 @@ export class ClaudeProvider implements ChatProvider {
         persistSession: true,
         ...(req.sessionId ? { resume: req.sessionId } : {}),
         abortController,
-        env: {
-          ...process.env,
-          ...(this.config.env ?? {}),
-        },
+        stderr: (data: string) => log.error(`[claude] stderr: ${data.trimEnd()}`),
+        env: (() => {
+          // Strip all Claude/subagent env vars so the spawned CLI
+          // runs as a fresh top-level process, not in nested subagent mode.
+          const merged = { ...process.env, ...(this.config.env ?? {}) };
+          for (const key of Object.keys(merged)) {
+            if (key === "CLAUDECODE" || (key.startsWith("CLAUDE_") && key !== "CLAUDE_CODE_OAUTH_TOKEN")) {
+              delete merged[key];
+            }
+          }
+          return merged;
+        })(),
       },
     });
 

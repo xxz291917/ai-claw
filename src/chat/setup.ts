@@ -33,7 +33,7 @@ export function setupChatProvider(
   skillsDirs: string[],
   existingSuite?: ToolSuiteResult,
   memoryManager?: MemoryManager,
-  claudeServerConfigs?: Record<string, { url: string; headers?: Record<string, string> }>,
+  claudeServerConfigs?: Record<string, { type: "http"; url: string; headers?: Record<string, string> }>,
 ): ChatSetupResult {
   const suite = existingSuite ?? buildToolSuite(env, skillsDirs, memoryManager);
 

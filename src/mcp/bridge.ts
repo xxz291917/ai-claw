@@ -13,8 +13,8 @@ const CALL_TOOL_TIMEOUT_MS = 30_000;
 export type McpBridgeResult = {
   /** UnifiedToolDef[] for GenericProvider (bridged tools) */
   tools: UnifiedToolDef[];
-  /** SSE configs for ClaudeProvider's native mcpServers */
-  claudeServerConfigs: Record<string, { url: string; headers?: Record<string, string> }>;
+  /** HTTP configs for ClaudeProvider's native mcpServers (Claude CLI schema) */
+  claudeServerConfigs: Record<string, { type: "http"; url: string; headers?: Record<string, string> }>;
   /** Successfully connected server names */
   connected: { name: string; toolCount: number }[];
   /** Skipped server names with reasons */
@@ -51,8 +51,9 @@ export async function bridgeMcpTools(config: McpConfig): Promise<McpBridgeResult
         tools.push(mcpToolToUnified(serverName, mcpTool, client));
       }
 
-      // Store native config for ClaudeProvider path
+      // Store native config for ClaudeProvider path (Claude CLI requires `type`)
       claudeServerConfigs[serverName] = {
+        type: "http",
         url: serverConfig.url,
         ...(Object.keys(serverConfig.headers).length > 0 && { headers: serverConfig.headers }),
       };
