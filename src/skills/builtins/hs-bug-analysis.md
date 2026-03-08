@@ -1,43 +1,55 @@
 ---
 name: hs-bug-analysis
-description: "Structured workflow to analyze a bug or issue: gather context, locate root cause, and produce an actionable fix plan. Use when asked to investigate a bug, diagnose an error, or understand why something broke."
-tags: [debugging, analysis, quality]
+description: "分析和诊断 bug 的结构化流程。当用户提到 bug、报错、异常、Sentry issue、线上问题、白屏、崩溃、500 错误、功能异常、排查问题等，都应使用此 skill。支持 Sentry issue 号直接分析，也支持人工描述的问题。"
+tags: [bug, error, sentry, debugging, analysis, 报错, 异常, 排查, 线上问题, crash, 500, 白屏]
 allowed-tools: bash_exec, file_read, web_fetch, sentry_query, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
-requires-env: [GH_TOKEN]
 ---
 
-# Bug Analysis Workflow
+# Bug 分析工作流
 
-Structured investigation: gather symptoms → search context → locate root cause → propose fix plan.
+结构化排查：收集信息 → 定位代码 → 根因分析 → 修复方案。
+
+## 触发条件
+
+以下任一情况都应触发此流程：
+- 用户提到 Sentry issue 号（如 "分析 Sentry 118889"）
+- 用户描述了一个 bug 或异常行为
+- 用户提到报错信息、错误日志、线上问题
+- 用户问 "为什么 XX 不工作" / "XX 怎么挂了"
 
 ## Inputs
 
-Collect these before starting (ask if missing):
+从用户消息中提取（缺少则问）：
 
 | Input | Description | Example |
 |-------|-------------|---------|
-| `symptom` | Error message, unexpected behavior, or issue description | "用户登录后页面空白" |
-| `repo` | Affected GitHub repo (optional) | `housesigma/backend` |
-| `issue_number` | GitHub issue number (optional) | `#456` |
-| `env` | Where it occurs: prod / staging / local | `prod` |
+| `sentry_issue` | Sentry issue ID（如有） | `118889` |
+| `symptom` | 错误现象或用户描述 | "用户登录后页面空白" |
+| `env` | 发生环境：prod / staging / local（默认 prod） | `prod` |
 
 ## Steps
 
-### 1. Understand the symptom
+### 1. 收集错误信息
 
-If an issue number is provided, use `web_fetch` to call GitHub API:
+**有 Sentry issue ID** → 先用 `sentry_query` 获取完整信息：
 ```
-GET https://api.github.com/repos/<owner>/<repo>/issues/<issue_number>
-Headers: Authorization: Bearer ${GH_TOKEN}
+sentry_query issue <issue_id>
 ```
 
-Summarize:
+从 Sentry 中提取：
+- 错误类型和消息
+- 堆栈跟踪（stacktrace）
+- 影响用户数和事件数
+- 首次/最近出现时间
+- 相关的 tags（浏览器、OS、URL 等）
+
+**无 Sentry ID** → 根据用户描述整理：
 - **现象**：用户看到了什么
 - **影响范围**：哪些用户/场景受影响
 - **首次出现时间**：什么时候开始的（如已知）
 - **复现步骤**：如何触发
 
-### 2. Gather context from knowledge sources
+### 2. 搜索相关上下文
 
 **需求和历史** — 用 `notion-rag__search`：
 - 搜索该功能的需求文档、设计决策、已知限制
@@ -45,44 +57,31 @@ Summarize:
 - 查找是否有相关的历史 bug 记录或已知问题
 
 **代码定位** — 用 `code-rag__search_code` 和 `code-rag__get_function`：
-- 搜索错误关键词、函数名、相关模块
+- 从 Sentry stacktrace 中提取文件名和函数名进行搜索
+- 搜索错误关键词、相关模块
 - 找到最可能出问题的代码路径
 - 查看调用链：谁调用了出错的函数？
 
 **项目结构** — 用 `code-rag__get_file_structure`（首次分析时）：
 - 了解整体架构，定位相关模块所在目录
 
-> 如果知识库无相关结果，直接根据症状和代码分析继续。
+> 如果知识库无相关结果，直接根据 Sentry 数据和代码分析继续。
 
-### 3. Deep dive into suspect code
+### 3. 深入可疑代码
 
 读取最可疑的文件和函数：
 ```bash
 # 查看相关文件
 file_read <suspect_file>
-
-# 查看 git 历史（如有 clone）
-git -C <repo_path> log --oneline -20 -- <suspect_file>
-git -C <repo_path> show <commit_hash>
 ```
 
 关注：
-- 最近有没有改动该文件？
+- Sentry stacktrace 指向的具体代码行
 - 是否有边界条件未处理（null、空数组、并发）？
 - 是否有依赖的外部服务或配置变更？
+- 最近是否有相关改动？
 
-### 4. Check logs and related issues (if applicable)
-
-```
-# Sentry 错误详情
-sentry_query issue <issue_id>
-
-# GitHub 搜索相关 issue（via API）
-GET https://api.github.com/search/issues?q=<keyword>+repo:<owner>/<repo>+state:all
-Headers: Authorization: Bearer ${GH_TOKEN}
-```
-
-### 5. Root cause analysis
+### 4. 根因分析
 
 用 "5 Whys" 方法：
 
@@ -103,7 +102,7 @@ Why 2: 为什么会 <answer>？
 - **影响范围**：哪些模块/用户受影响
 - **严重程度**：Critical / High / Medium / Low
 
-### 6. Propose fix plan
+### 5. 修复方案
 
 给出 1-3 个修复方案，每个包含：
 
@@ -117,19 +116,18 @@ Why 2: 为什么会 <answer>？
 
 **推荐方案**：选出最佳方案，说明理由。
 
-### 7. Handoff
-
-输出完整分析报告，格式：
+### 6. 输出报告
 
 ```
 ## Bug 分析报告
 
+**Sentry**: #<issue_id>（如适用）
 **症状**: <symptom>
 **根因**: <root cause>
 **影响**: <scope>
 **严重程度**: <level>
 
-**推荐修复方案**: <方案 A 描述>
+**推荐修复方案**: <方案描述>
 
 **相关文件**:
 - <file1> — <why relevant>
@@ -145,3 +143,4 @@ Why 2: 为什么会 <answer>？
 - 分析阶段只读，不改任何代码
 - 如果根因不确定，列出 2-3 个假设并标明置信度
 - 严重程度 Critical/High → 在报告顶部加醒目提示
+- **必须按步骤执行**，不要只查一次 Sentry 就直接回复，要完成完整的分析流程
