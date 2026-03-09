@@ -3,9 +3,11 @@ import type { ChatEvent } from "./types.js";
 import type { Session } from "../sessions/types.js";
 import type { SubagentManager } from "../subagent/manager.js";
 import type { UserSettingsManager } from "../settings/manager.js";
+import type { CronService } from "../cron/service.js";
 import { installSkill, uninstallSkill, searchSkills } from "./clawhub.js";
 import { scanSkillDirs } from "../skills/loader.js";
 import { formatMissingReason } from "../skills/eligibility.js";
+import { handleCronCommand } from "../cron/commands.js";
 
 export type CommandContext = {
   session: Session;
@@ -17,6 +19,7 @@ export type CommandContext = {
   skillsDirs: string[];
   subagentManager?: SubagentManager;
   userSettingsManager?: UserSettingsManager;
+  cronService?: CronService;
 };
 
 type CommandResult = {
@@ -57,6 +60,8 @@ export async function handleCommand(
       return handleStop(ctx);
     case "/prompt":
       return handlePrompt(args, ctx);
+    case "/cron":
+      return handleCron(args, ctx);
     default:
       return null;
   }
@@ -171,6 +176,7 @@ function handleHelp(ctx: CommandContext): CommandResult {
       "  `/prompt show` — Show your custom system prompt",
       "  `/prompt set <text>` — Set a custom system prompt",
       "  `/prompt clear` — Remove your custom system prompt",
+      "  `/cron` — Manage scheduled tasks (list/add/remove/enable/disable/run)",
       "  `/help` — Show this help message",
     ].join("\n"),
   );
@@ -242,6 +248,17 @@ function handleStop(ctx: CommandContext): CommandResult {
   return textResult(ctx.session.id, count > 0
     ? `${count} task(s) cancelled.`
     : "No running tasks to cancel.");
+}
+
+// ---------------------------------------------------------------------------
+// Cron commands
+// ---------------------------------------------------------------------------
+
+function handleCron(args: string[], ctx: CommandContext): CommandResult {
+  if (!ctx.cronService) {
+    return textResult(ctx.session.id, "Cron scheduler not available.");
+  }
+  return handleCronCommand(args, ctx.session.userId, ctx.session.id, ctx.cronService);
 }
 
 // ---------------------------------------------------------------------------

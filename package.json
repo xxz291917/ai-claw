@@ -17,6 +17,7 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.6.2",
+    "croner": "^10.0.1",
     "dotenv": "^17.2.4",
     "hono": "^4.11.9",
     "zod": "^4.3.6"

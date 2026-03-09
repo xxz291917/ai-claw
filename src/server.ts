@@ -26,6 +26,7 @@ import { bridgeMcpTools } from "./mcp/bridge.js";
 import { log } from "./logger.js";
 import { WorkflowEngine } from "./workflow/engine.js";
 import { createWorkflowTools } from "./workflow/tools.js";
+import { CronService } from "./cron/service.js";
 import type Database from "better-sqlite3";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -115,6 +116,18 @@ export async function createApp(): Promise<{
   // --- Wire LLM handler for workflow engine ---
   workflowEngine.setChatProvider(chatProvider);
 
+  // --- Cron Scheduler ---
+  const cronService = new CronService({
+    db,
+    registry,
+    sessionManager,
+    eventLog,
+    memoryManager,
+    defaultProvider: env.CHAT_PROVIDER,
+    maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
+  });
+  cronService.start();
+
   // --- Channels ---
   const channelManager = new ChannelManager();
 
@@ -124,6 +137,7 @@ export async function createApp(): Promise<{
     maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
     skillsDirs,
     subagentManager,
+    cronService,
   }));
 
   // Optionally register lark channel
@@ -178,8 +192,9 @@ export async function createApp(): Promise<{
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
 
-  // Graceful shutdown — close MCP connections on process exit
+  // Graceful shutdown — stop cron and close MCP connections on process exit
   const shutdown = async () => {
+    cronService.stop();
     log.info("[shutdown] Closing MCP connections...");
     await mcpBridge.close();
     log.info("[shutdown] Done.");

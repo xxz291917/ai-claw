@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { initCronSchema } from "./cron/store.js";
 
 export function initDb(db: Database.Database): void {
   db.pragma("journal_mode = WAL");
@@ -121,6 +122,9 @@ export function initDb(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_workflow_executions_session
       ON workflow_executions(session_id, status);
   `);
+
+  // Cron jobs table (separate function to keep schema modular)
+  initCronSchema(db);
 }
 
 export function createDb(path: string): Database.Database {

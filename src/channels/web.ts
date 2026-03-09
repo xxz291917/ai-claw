@@ -1,6 +1,7 @@
 import type { Channel, ChannelContext } from "./types.js";
 import type { ChatProvider } from "../chat/types.js";
 import type { SubagentManager } from "../subagent/manager.js";
+import type { CronService } from "../cron/service.js";
 import { streamSSE } from "hono/streaming";
 import { handleCommand } from "../chat/commands.js";
 import { handleConversation, type ConversationDeps } from "../chat/conversation.js";
@@ -14,6 +15,7 @@ export type WebChannelConfig = {
   /** Skill directories — used to derive the writable install dir for /install */
   skillsDirs: string[];
   subagentManager?: SubagentManager;
+  cronService?: CronService;
 };
 
 export class WebChannel implements Channel {
@@ -76,6 +78,7 @@ export class WebChannel implements Channel {
         skillsDirs,
         subagentManager: this.config.subagentManager,
         userSettingsManager,
+        cronService: this.config.cronService,
       });
       if (cmdResult) {
         if (cmdResult.newSession) {

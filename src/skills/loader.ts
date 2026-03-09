@@ -57,8 +57,9 @@ export function scanSkillDirs(dirs: string[]): SkillEntry[] {
     for (const item of items) {
       const fullPath = resolve(dir, item);
 
-      // Skip non-.md and the frontmatter.ts utility
+      // Skip non-.md, utility files, and _-prefixed (disabled) entries
       if (item === "frontmatter.ts" || item === "loader.ts") continue;
+      if (item.startsWith("_")) continue;
 
       let filePath: string | null = null;
       let inferredName: string;
