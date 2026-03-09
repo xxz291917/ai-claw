@@ -34,6 +34,18 @@ npm run build
 pm2 start ecosystem.config.cjs
 ```
 
+> **Root server note:** Claude CLI (Agent SDK) refuses to run as root. The
+> `ecosystem.config.cjs` auto-detects root and sets `uid/gid` to drop
+> privileges to `aiclaw` user. `exec_mode` is explicitly set to `"fork"` —
+> PM2 silently defaults to `"cluster"` when `uid/gid` is present, which
+> breaks ESM module resolution. Ensure the `aiclaw` user exists on the server
+> and has read access to the project directory.
+>
+> On Rocky Linux 8, `gcc-toolset-12` is required to compile `better-sqlite3`:
+> ```bash
+> source /opt/rh/gcc-toolset-12/enable && npm ci
+> ```
+
 ### Docker
 
 ```bash
