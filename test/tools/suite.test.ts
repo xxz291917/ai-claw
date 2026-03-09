@@ -9,14 +9,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const skillsDirs = [resolve(__dirname, "../../src/skills")];
 
 describe("buildToolSuite", () => {
-  it("includes base tools (get_skill, web_fetch, claude_code)", () => {
+  it("includes base tools (web_fetch, claude_code, file_read)", () => {
     const result = buildToolSuite({ WORKSPACE_DIR: "/tmp/test" }, skillsDirs);
 
     expect(result.mcpServers["ai-claw-tools"]).toBeDefined();
     expect(result.descriptions.length).toBeGreaterThanOrEqual(3);
-    expect(result.descriptions.some((d) => d.includes("get_skill"))).toBe(true);
     expect(result.descriptions.some((d) => d.includes("web_fetch"))).toBe(true);
     expect(result.descriptions.some((d) => d.includes("claude_code"))).toBe(true);
+    expect(result.descriptions.some((d) => d.includes("file_read"))).toBe(true);
+    expect(result.descriptions.some((d) => d.includes("get_skill"))).toBe(false);
   });
 
   it("includes sentry_query when config is complete", () => {

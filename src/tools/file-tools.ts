@@ -131,6 +131,7 @@ export function createFileTools(config: FileToolsConfig): UnifiedToolDef[] {
   // -----------------------------------------------------------------------
   const fileWrite: UnifiedToolDef = {
     name: "file_write",
+    mutating: true,
     description:
       "Write content to a file in the workspace. Creates parent directories if needed. " +
       "Overwrites the file if it already exists.",

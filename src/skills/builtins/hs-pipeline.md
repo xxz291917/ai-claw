@@ -2,7 +2,7 @@
 name: hs-pipeline
 description: "End-to-end engineering pipeline: bug analysis → solution → code change → PR → release. Use when asked to handle a complete issue lifecycle from investigation to deployment, or when the user says 'help me fix and release issue #X'."
 tags: [pipeline, workflow, automation]
-allowed-tools: bash_exec, file_read, get_skill, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
+allowed-tools: bash_exec, file_read, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
 requires-bins: [git, gh, claude]
 ---
 
@@ -31,7 +31,7 @@ Bug Analysis → [✅ 确认方案] → Submit PR → [✅ 确认上线] → Rel
 加载并执行 `hs-bug-analysis` skill：
 
 ```
-get_skill("hs-bug-analysis")
+file_read the `hs-bug-analysis` skill from <available_skills>
 ```
 
 目标输出：
@@ -60,7 +60,7 @@ get_skill("hs-bug-analysis")
 加载并执行 `hs-submit-pr` skill：
 
 ```
-get_skill("hs-submit-pr")
+file_read the `hs-submit-pr` skill from <available_skills>
 ```
 
 将 Stage 1 的输出作为 task 输入：
@@ -96,7 +96,7 @@ CI 状态: <passing / pending / failing>
 加载并执行 `hs-release` skill：
 
 ```
-get_skill("hs-release")
+file_read the `hs-release` skill from <available_skills>
 ```
 
 前置条件检查：

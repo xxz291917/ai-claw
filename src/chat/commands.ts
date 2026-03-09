@@ -3,11 +3,13 @@ import type { ChatEvent } from "./types.js";
 import type { Session } from "../sessions/types.js";
 import type { SubagentManager } from "../subagent/manager.js";
 import type { UserSettingsManager } from "../settings/manager.js";
+import type { MemoryManager } from "../memory/manager.js";
 import type { CronService } from "../cron/service.js";
 import { installSkill, uninstallSkill, searchSkills } from "./clawhub.js";
 import { scanSkillDirs } from "../skills/loader.js";
 import { formatMissingReason } from "../skills/eligibility.js";
 import { handleCronCommand } from "../cron/commands.js";
+import { estimateStringTokens, estimateHistoryTokens } from "./token-utils.js";
 
 export type CommandContext = {
   session: Session;
@@ -19,7 +21,10 @@ export type CommandContext = {
   skillsDirs: string[];
   subagentManager?: SubagentManager;
   userSettingsManager?: UserSettingsManager;
+  memoryManager?: MemoryManager;
   cronService?: CronService;
+  /** The full system prompt string — for /context stats */
+  systemPrompt?: string;
 };
 
 type CommandResult = {
@@ -60,6 +65,8 @@ export async function handleCommand(
       return handleStop(ctx);
     case "/prompt":
       return handlePrompt(args, ctx);
+    case "/context":
+      return handleContext(ctx);
     case "/cron":
       return handleCron(args, ctx);
     default:
@@ -176,6 +183,7 @@ function handleHelp(ctx: CommandContext): CommandResult {
       "  `/prompt show` — Show your custom system prompt",
       "  `/prompt set <text>` — Set a custom system prompt",
       "  `/prompt clear` — Remove your custom system prompt",
+      "  `/context` — Show prompt & context token usage",
       "  `/cron` — Manage scheduled tasks (list/add/remove/enable/disable/run)",
       "  `/help` — Show this help message",
     ].join("\n"),
@@ -248,6 +256,45 @@ function handleStop(ctx: CommandContext): CommandResult {
   return textResult(ctx.session.id, count > 0
     ? `${count} task(s) cancelled.`
     : "No running tasks to cancel.");
+}
+
+// ---------------------------------------------------------------------------
+// Context stats command
+// ---------------------------------------------------------------------------
+
+function handleContext(ctx: CommandContext): CommandResult {
+  const { session, sessionManager } = ctx;
+  const lines: string[] = ["**Context Usage**\n"];
+
+  // System prompt
+  if (ctx.systemPrompt) {
+    const promptTokens = estimateStringTokens(ctx.systemPrompt);
+    lines.push(`System prompt: ~${promptTokens.toLocaleString()} tokens (${ctx.systemPrompt.length.toLocaleString()} chars)`);
+  }
+
+  // Session history
+  const messages = sessionManager.getMessages(session.id);
+  const historyTokens = estimateHistoryTokens(messages);
+  lines.push(`History: ${messages.length} messages, ~${historyTokens.toLocaleString()} tokens`);
+
+  // Skills
+  const skills = scanSkillDirs(ctx.skillsDirs);
+  const eligible = skills.filter((s) => s.eligibility.eligible);
+  lines.push(`Skills: ${eligible.length} available / ${skills.length} total`);
+
+  // Memories
+  if (ctx.memoryManager) {
+    const memories = ctx.memoryManager.getByUser(session.userId);
+    lines.push(`Memories: ${memories.length} entries for current user`);
+  }
+
+  // Total estimate
+  const promptTokens = ctx.systemPrompt ? estimateStringTokens(ctx.systemPrompt) : 0;
+  const total = promptTokens + historyTokens;
+  lines.push(`\n**Estimated total: ~${total.toLocaleString()} tokens**`);
+  lines.push(`\n_Note: estimates are approximate. Claude provider's actual context includes SDK overhead and tool schemas not counted here._`);
+
+  return textResult(session.id, lines.join("\n"));
 }
 
 // ---------------------------------------------------------------------------

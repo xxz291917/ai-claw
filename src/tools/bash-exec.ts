@@ -41,6 +41,27 @@ function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return safe;
 }
 
+/** Commands with side effects that require user confirmation */
+const MUTATING_PREFIXES = [
+  "git commit", "git push", "git merge", "git rebase", "git reset", "git checkout",
+  "git branch -d", "git branch -D", "git tag",
+  "rm ", "rm\t", "rmdir", "mv ", "mv\t", "cp ", "cp\t",
+  "chmod", "chown", "mkdir",
+  "npm install", "npm i ", "npm i\t", "npm uninstall", "npm publish", "npm run",
+  "npx ", "yarn ", "pnpm ",
+  "docker ", "kubectl ",
+  "curl -X POST", "curl -X PUT", "curl -X DELETE", "curl -X PATCH",
+  "wget ",
+  "pip install", "pip uninstall",
+  "brew install", "brew uninstall",
+  "apt ", "yum ", "dnf ", "pacman ",
+];
+
+function isMutatingCommand(command: string): boolean {
+  const trimmed = command.trimStart();
+  return MUTATING_PREFIXES.some((p) => trimmed.startsWith(p));
+}
+
 type BashExecConfig = {
   defaultCwd: string;
   defaultTimeoutMs?: number;
@@ -67,6 +88,7 @@ export function createBashExecTool(config: BashExecConfig): UnifiedToolDef {
 
   return {
     name: "bash_exec",
+    mutating: (args: { command?: string }) => isMutatingCommand(args.command ?? ""),
     description:
       "Execute a shell command locally and return its output. " +
       "Commands run in the workspace root by default. " +

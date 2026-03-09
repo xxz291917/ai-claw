@@ -150,7 +150,7 @@ Channel (Web/Lark)
 | `web-search.ts` | Brave Search API 搜索 |
 | `claude-code.ts` | 委托任务给 Claude Code CLI（子 Agent 模式） |
 | `file-tools.ts` | `file_read` + `file_write`，`safePath()` 沙箱校验防止路径逃逸 |
-| `skill-reader.ts` | `get_skill` 工具 — 按需加载技能完整内容 |
+| ~~`skill-reader.ts`~~ | 已移除 — 技能通过 `file_read` + XML `<location>` 直接加载 |
 
 ### 工具分类
 
@@ -158,7 +158,7 @@ Channel (Web/Lark)
 
 | 工具 | 启用条件 |
 |------|---------|
-| `get_skill`, `web_fetch`, `claude_code` | 始终启用 |
+| `web_fetch`, `claude_code` | 始终启用 |
 | `file_read`, `file_write` | 始终启用 |
 | `spawn` | SubagentManager 存在时启用 |
 | `sentry_query` | `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` + `SENTRY_PROJECT` |
@@ -204,7 +204,7 @@ Markdown 文件，带 YAML frontmatter（name, description, tags, allowed-tools,
 | `loader.ts` | `scanSkillDirs()` — 多目录扫描 + 资格检查，支持 flat `*.md` + ClawHub `<name>/SKILL.md` |
 | `eligibility.ts` | `checkEligibility()` — 校验 skill 的 env/binary 依赖 |
 
-**加载机制**: 启动时扫描所有 skill 的 name + description 注入 system prompt，运行时 Agent 通过 `get_skill` 工具按需加载完整内容。
+**加载机制**: 启动时扫描所有 skill 的 name + description + filePath，以 XML `<available_skills>` 格式注入 system prompt。运行时 Agent 通过 `file_read` 工具按 `<location>` 路径按需加载完整内容。
 
 ---
 

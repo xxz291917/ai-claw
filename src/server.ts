@@ -137,6 +137,7 @@ export async function createApp(): Promise<{
     skillsDirs,
     subagentManager,
     cronService,
+    systemPrompt: setup.systemPrompt,
   }));
 
   // Optionally register lark channel

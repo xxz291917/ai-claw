@@ -92,6 +92,8 @@ export class ProviderRegistry {
 
 export type BuildRegistryOpts = {
   systemPrompt: string;
+  /** Compact prompt for sub-agents (omits skills, project knowledge, tool list) */
+  minimalPrompt: string;
   skillsDirs: string[];
   mcpServers: Record<string, unknown>;
   genericTools?: ToolDef[];
@@ -109,17 +111,21 @@ export function buildDefaultRegistry(
 ): ProviderRegistry {
   const registry = new ProviderRegistry();
 
+  /** Select system prompt based on factory opts.mode */
+  const selectPrompt = (factoryOpts?: Record<string, unknown>) =>
+    factoryOpts?.mode === "minimal" ? opts.minimalPrompt : opts.systemPrompt;
+
   // Always register claude
   registry.register({
     name: "claude",
     type: "claude",
-    factory: () => {
+    factory: (factoryOpts) => {
       if (!env.ANTHROPIC_API_KEY && !env.CLAUDE_CODE_OAUTH_TOKEN) {
         throw new Error("ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is required for claude provider");
       }
       return new ClaudeProvider({
         workspaceDir: env.WORKSPACE_DIR ?? ".",
-        skillContent: opts.systemPrompt,
+        skillContent: selectPrompt(factoryOpts),
         model: env.CLAUDE_MODEL,
         maxTurns: env.CLAUDE_MAX_TURNS ? Number(env.CLAUDE_MAX_TURNS) : undefined,
         maxBudgetUsd: env.CLAUDE_MAX_BUDGET_USD ? Number(env.CLAUDE_MAX_BUDGET_USD) : undefined,
@@ -134,12 +140,12 @@ export function buildDefaultRegistry(
     registry.register({
       name: config.name,
       type: "openai-compatible",
-      factory: () =>
+      factory: (factoryOpts) =>
         new GenericProvider({
           baseUrl: config.apiBase,
           apiKey: config.apiKey,
           model: config.model ?? config.name,
-          systemPrompt: opts.systemPrompt,
+          systemPrompt: selectPrompt(factoryOpts),
           tools: opts.genericTools,
           maxToolResultChars: config.maxToolResultChars,
           maxContextTokens: config.maxContextTokens,
@@ -153,12 +159,12 @@ export function buildDefaultRegistry(
     registry.register({
       name: "generic",
       type: "openai-compatible",
-      factory: () =>
+      factory: (factoryOpts) =>
         new GenericProvider({
           baseUrl: env.CHAT_API_BASE!,
           apiKey: env.CHAT_API_KEY!,
           model: env.CHAT_MODEL ?? "deepseek-chat",
-          systemPrompt: opts.systemPrompt,
+          systemPrompt: selectPrompt(factoryOpts),
           tools: opts.genericTools,
           maxToolResultChars: env.CHAT_MAX_TOOL_RESULT_CHARS
             ? Number(env.CHAT_MAX_TOOL_RESULT_CHARS)

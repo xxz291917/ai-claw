@@ -88,7 +88,7 @@ npx vitest run test/tools/bash-exec.test.ts
 | `src/tools/web-search.ts` | Brave Search API wrapper with caching |
 | `src/tools/claude-code.ts` | Delegates tasks to Claude Code CLI (sub-agent mode) |
 | `src/tools/file-tools.ts` | `file_read` + `file_write` with `safePath()` sandbox validation |
-| `src/tools/skill-reader.ts` | `get_skill` tool — on-demand skill content loading |
+| ~~`src/tools/skill-reader.ts`~~ | Removed — skills loaded via `file_read` + XML `<location>` in system prompt |
 | **Skills** | |
 | `src/skills/*.md` | Markdown skills with YAML frontmatter (name, description, tags, allowed-tools, requires-env, requires-bins) |
 | `src/skills/loader.ts` | `scanSkillDirs()` — multi-dir scanner with eligibility checking, supports flat `*.md` + ClawHub `<name>/SKILL.md` format |

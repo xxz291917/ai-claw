@@ -16,6 +16,8 @@ export type WebChannelConfig = {
   skillsDirs: string[];
   subagentManager?: SubagentManager;
   cronService?: CronService;
+  /** System prompt string — passed to /context command for stats */
+  systemPrompt?: string;
 };
 
 export class WebChannel implements Channel {
@@ -78,7 +80,9 @@ export class WebChannel implements Channel {
         skillsDirs,
         subagentManager: this.config.subagentManager,
         userSettingsManager,
+        memoryManager,
         cronService: this.config.cronService,
+        systemPrompt: this.config.systemPrompt,
       });
       if (cmdResult) {
         if (cmdResult.newSession) {

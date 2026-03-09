@@ -68,7 +68,7 @@ export class SubagentManager {
   private async run(task: SubagentTask, signal: AbortSignal): Promise<void> {
     const { registry, sessionManager } = this.config;
 
-    const provider = registry.create(task.providerName);
+    const provider = registry.create(task.providerName, { mode: "minimal" });
 
     // Minimal deps — no memoryManager for subagents
     const deps: ConversationDeps = {
@@ -84,6 +84,7 @@ export class SubagentManager {
       channelId: task.id,
       deps,
       abortSignal: signal,
+      skipConfirmation: true, // subagents run autonomously — no human in the loop
     });
 
     if (task.status !== "running") return; // was cancelled

@@ -26,6 +26,7 @@ export type ChatSetupResult = {
   provider: ChatProvider;
   registry: ProviderRegistry;
   mcpServers: Record<string, unknown>;
+  systemPrompt: string;
 };
 
 export function setupChatProvider(
@@ -51,17 +52,21 @@ export function setupChatProvider(
   // Simple heuristic: only include tool descriptions for the "claude" provider.
   const includeToolDescs = providerName === "claude";
 
-  const systemPrompt = buildSystemPrompt({
+  const promptBase = {
     workspaceDir: env.WORKSPACE_DIR,
     skillsDirs,
     tools: includeToolDescs ? suite.descriptions : undefined,
-  });
+  };
+
+  const systemPrompt = buildSystemPrompt({ ...promptBase, mode: "full" });
+  const minimalPrompt = buildSystemPrompt({ ...promptBase, mode: "minimal" });
 
   // Build the registry with all available providers
   const registry = buildDefaultRegistry(
     env as unknown as Record<string, string | undefined>,
     {
       systemPrompt,
+      minimalPrompt,
       skillsDirs,
       mcpServers: mergedMcpServers,
       genericTools: suite.genericTools,
@@ -71,5 +76,5 @@ export function setupChatProvider(
   // Create the selected provider
   const provider = registry.create(providerName);
 
-  return { provider, registry, mcpServers: mergedMcpServers };
+  return { provider, registry, mcpServers: mergedMcpServers, systemPrompt };
 }

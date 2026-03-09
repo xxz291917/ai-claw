@@ -7,7 +7,6 @@
 
 import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { registerTools } from "./register.js";
-import { createSkillReaderTool } from "./skill-reader.js";
 import { createSentryQueryTool } from "./sentry-query.js";
 import { createWebSearchTool } from "./web-search.js";
 import { createWebFetchTool } from "./web-fetch.js";
@@ -54,7 +53,6 @@ export function buildToolSuite(
   opts?: { subagentManager?: SubagentManager; defaultProvider?: string; extraTools?: UnifiedToolDef[] },
 ): ToolSuiteResult {
   const toolDefs: UnifiedToolDef[] = [
-    createSkillReaderTool(skillsDirs),
     createWebFetchTool({ firecrawlApiKey: env.FIRECRAWL_API_KEY }),
     createClaudeCodeTool({ workspaceDir: env.WORKSPACE_DIR }),
     ...createFileTools({ workspaceDir: env.WORKSPACE_DIR }),

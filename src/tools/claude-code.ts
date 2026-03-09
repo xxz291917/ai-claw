@@ -36,12 +36,13 @@ export function createClaudeCodeTool(config: ClaudeCodeConfig): UnifiedToolDef {
 
   return {
     name: "claude_code",
+    mutating: true,
     description:
       "Delegate a code task to Claude Code (autonomous sub-agent). " +
       "Claude Code can read/write/edit files, search codebases (grep/glob), run shell commands, and run tests — all autonomously. " +
       "Use this for tasks that require understanding and modifying code: bug fixes, refactoring, adding features, code review, etc. " +
       "Provide a clear, specific task description. Returns a summary of what was accomplished. " +
-      "IMPORTANT: Do NOT use this tool to execute skills loaded via get_skill. " +
+      "IMPORTANT: Do NOT use this tool to execute skills. " +
       "Claude Code runs as a separate process and cannot access skill content from the conversation. " +
       "Use bash_exec instead to run skill scripts directly.",
     inputSchema: {

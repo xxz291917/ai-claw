@@ -39,6 +39,8 @@ export type ConversationRequest = {
   channelId: string;
   deps: ConversationDeps;
   abortSignal?: AbortSignal;
+  /** Skip confirmation prompts for mutating tools (e.g. subagent runs) */
+  skipConfirmation?: boolean;
   /** Optional callback invoked for each event as it arrives — enables real-time SSE streaming. */
   onEvent?: (event: ChatEvent) => void | Promise<void>;
 };
@@ -142,6 +144,7 @@ export async function handleConversation(
     }
 
     const identityParts: string[] = [];
+    identityParts.push(`当前时间: ${new Date().toISOString()}`);
     identityParts.push(`当前用户: ${session.userId}`);
     if (memoryText) {
       identityParts.push(`你了解该用户的以下信息:\n${memoryText}`);
@@ -229,7 +232,7 @@ export async function handleConversation(
         history,
         systemPromptAddition,
         abortSignal,
-        toolContext: { userId: session.userId, sessionId },
+        toolContext: { userId: session.userId, sessionId, skipConfirmation: req.skipConfirmation },
       })) {
         events.push(event);
         await req.onEvent?.(event);

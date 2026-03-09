@@ -7,6 +7,8 @@ import type { z } from "zod";
 export type ToolContext = {
   userId: string;
   sessionId: string;
+  /** When true, skip confirmation prompts for mutating tools */
+  skipConfirmation?: boolean;
 };
 
 /**
@@ -28,4 +30,13 @@ export type UnifiedToolDef = {
   };
   /** Core logic — returns plain string. ctx provides per-request user/session info. */
   execute: (args: any, ctx: ToolContext) => Promise<string>;
+  /**
+   * Whether this tool performs write/mutating operations.
+   * When true, the tool's execute() should enforce a confirmation gate
+   * (return a CONFIRMATION_REQUIRED message) unless ctx.skipConfirmation is set.
+   *
+   * Static true = always mutating (e.g. file_write, claude_code).
+   * Function form = depends on args (e.g. bash_exec: only for non-read-only commands).
+   */
+  mutating?: boolean | ((args: any) => boolean);
 };
