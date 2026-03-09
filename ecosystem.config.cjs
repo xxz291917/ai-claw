@@ -1,14 +1,11 @@
 // PM2 ecosystem config
-// When running as root, automatically drops to 'aiclaw' user
-// (required by Claude provider which refuses root execution)
-const isRoot = process.getuid?.() === 0;
-
+// On root servers, start PM2 as non-root user to satisfy Claude CLI:
+//   su - aiclaw -c 'cd /root/web_www/ai-claw && pm2 start ecosystem.config.cjs'
 module.exports = {
   apps: [
     {
       name: "ai-claw",
       script: "dist/index.js",
-      ...(isRoot && { uid: "aiclaw", gid: "aiclaw" }),
       instances: 1,
       autorestart: true,
       watch: false,
