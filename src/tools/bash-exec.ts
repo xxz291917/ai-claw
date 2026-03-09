@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import type { UnifiedToolDef } from "./types.js";
-import { isSensitiveFile } from "./sensitive-files.js";
 import { log } from "../logger.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 120s — enough for git, npm, sqlite3
@@ -12,6 +11,24 @@ const DEFAULT_MAX_OUTPUT = 200_000; // 200KB (was 50KB)
 
 /** Keys containing these substrings are stripped from child process env */
 const SENSITIVE_ENV_SUBSTRINGS = ["KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL"];
+
+/** Sensitive file patterns — blocks commands referencing .env, keys, credentials, etc. */
+const SENSITIVE_FILE_PATTERNS: RegExp[] = [
+  /^\.env($|\.)/, // .env, .env.local, .env.production, etc.
+  /^\.netrc$/,
+  /^\.npmrc$/,
+  /^credentials\.json$/i,
+  /^secrets?\./i,
+  /\.pem$/,
+  /\.key$/,
+  /^id_rsa/,
+  /^id_ed25519/,
+];
+
+function isSensitiveFile(token: string): boolean {
+  const name = token.split("/").pop() || token;
+  return SENSITIVE_FILE_PATTERNS.some((p) => p.test(name));
+}
 
 /** Remove sensitive env vars so child processes can't leak them via `env`/`printenv` */
 function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
