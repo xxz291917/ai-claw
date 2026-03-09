@@ -6,9 +6,12 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
   WORKSPACE_DIR: z.string().default("data/workspace").transform((p) => resolve(p)),
 
-  // AI providers
+  // AI providers — Claude
   ANTHROPIC_API_KEY: z.string().optional(),
   CLAUDE_CODE_OAUTH_TOKEN: z.string().optional(),
+  CLAUDE_MODEL: z.string().optional(),
+  CLAUDE_MAX_TURNS: z.coerce.number().optional(),
+  CLAUDE_MAX_BUDGET_USD: z.coerce.number().optional(),
   GH_TOKEN: z.string().optional(),
 
   // Sentry tool (optional — enables sentry_query tool for Chat)

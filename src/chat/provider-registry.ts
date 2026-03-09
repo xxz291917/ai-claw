@@ -120,6 +120,9 @@ export function buildDefaultRegistry(
       return new ClaudeProvider({
         workspaceDir: env.WORKSPACE_DIR ?? ".",
         skillContent: opts.systemPrompt,
+        model: env.CLAUDE_MODEL,
+        maxTurns: env.CLAUDE_MAX_TURNS ? Number(env.CLAUDE_MAX_TURNS) : undefined,
+        maxBudgetUsd: env.CLAUDE_MAX_BUDGET_USD ? Number(env.CLAUDE_MAX_BUDGET_USD) : undefined,
         env: collectSkillEnv(opts.skillsDirs),
         mcpServers: opts.mcpServers,
       });

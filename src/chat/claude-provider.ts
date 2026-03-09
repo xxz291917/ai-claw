@@ -29,6 +29,7 @@ import { log } from "../logger.js";
 export type ClaudeProviderConfig = {
   workspaceDir: string;
   skillContent: string;
+  model?: string;
   maxTurns?: number;
   maxBudgetUsd?: number;
   env?: Record<string, string>;
@@ -56,7 +57,7 @@ export class ClaudeProvider implements ChatProvider {
       req.abortSignal.addEventListener("abort", () => abortController.abort(), { once: true });
     }
 
-    log.info(`[claude] query() start — resume=${req.sessionId ?? "(new)"} maxTurns=${this.config.maxTurns ?? 30}`);
+    log.info(`[claude] query() start — model=${this.config.model ?? "(default)"} resume=${req.sessionId ?? "(new)"}`);
 
     // handleConversation() always supplies systemPromptAddition (user identity + memories).
     const systemPrompt = req.systemPromptAddition
@@ -69,11 +70,12 @@ export class ClaudeProvider implements ChatProvider {
         cwd: this.config.workspaceDir,
         systemPrompt,
         tools: { type: "preset", preset: "claude_code" },
+        ...(this.config.model ? { model: this.config.model } : {}),
         mcpServers: this.config.mcpServers as any,
         permissionMode: "bypassPermissions",       // NOTE: requires non-root user (see pitfall #1)
         allowDangerouslySkipPermissions: true,
-        maxTurns: this.config.maxTurns ?? 30,
-        maxBudgetUsd: this.config.maxBudgetUsd ?? 2.0,
+        ...(this.config.maxTurns != null ? { maxTurns: this.config.maxTurns } : {}),
+        ...(this.config.maxBudgetUsd != null ? { maxBudgetUsd: this.config.maxBudgetUsd } : {}),
         includePartialMessages: true,
         persistSession: true,
         ...(req.sessionId ? { resume: req.sessionId } : {}),
