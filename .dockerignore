@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/
+.env
+.git/
+.DS_Store
+.playwright-mcp/
+mcp-servers.json
+skills_extra/
+test/
+*.md
+!src/**/*.md
