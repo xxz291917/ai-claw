@@ -103,6 +103,14 @@ src/
 └── public/               # Frontend static files
 ```
 
+## Security
+
+- **Workspace isolation**: `WORKSPACE_DIR` defaults to `data/workspace` — AI file operations (`file_read`/`file_write`) are sandboxed to this directory, keeping `.env` and project source out of reach
+- **Sensitive file blocklist**: `safePath()` blocks access to `.env*`, `.pem`, `.key`, `credentials.json`, `.netrc`, `.npmrc`, `id_rsa`, `id_ed25519`, etc.
+- **Bash command allowlist**: `BASH_EXEC_ALLOWED_COMMANDS` restricts which commands the AI can execute (pipes allowed, each segment checked individually). Shell metacharacters (`;`, `&`, `` ` ``, `$`, `()`, `{}`, `<>`) are blocked
+- **Sensitive file guard in bash**: Commands referencing sensitive files (e.g., `cat .env`) are rejected
+- **Environment sanitization**: Child processes spawned by `bash_exec` have env vars containing `KEY`, `SECRET`, `TOKEN`, `PASSWORD`, `CREDENTIAL` stripped
+
 ## Features
 
 - **Multi-provider AI**: Claude Agent SDK, any OpenAI-compatible API (DeepSeek, Kimi, etc.) via registry pattern
