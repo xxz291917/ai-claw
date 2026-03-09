@@ -36,7 +36,7 @@ npx vitest run test/tools/bash-exec.test.ts
 
 ## Architecture
 
-**Initialization:** `server.ts` → SubagentManager (lazy registry) → ToolSuite (with spawn) → setupChatProvider (registry + provider) → ChannelManager (Web + Lark) → startAll
+**Initialization:** `server.ts` → SubagentManager (lazy registry) → ToolSuite (with spawn) → setupChatProvider (registry + provider) → CronService → ChannelManager (Web + Lark) → startAll
 
 **Flow (Web):** Web UI → WebChannel (`POST /api/chat`) → auth → session → slash commands → `handleConversation()` → provider.stream() → SSE (via `onEvent`) → save reply → EventLog audit
 
@@ -98,8 +98,27 @@ npx vitest run test/tools/bash-exec.test.ts
 | `src/sessions/manager.ts` | `SessionManager` — session CRUD, message append, incremental compaction, provider session ID binding |
 | `src/memory/manager.ts` | `MemoryManager` — FTS5 full-text search (CJK prefix matching), per-request memory injection |
 | `src/memory/extractor.ts` | Extracts structured memories (preferences, decisions, facts) from conversations |
+| **Cron** | |
+| `src/cron/types.ts` | Schedule types (at/every/cron), CronJob, CronPayload definitions |
+| `src/cron/schedule.ts` | `computeNextRunAt()` using `croner` library, LRU-cached parsing |
+| `src/cron/store.ts` | SQLite CRUD for cron_jobs table with prepared statements |
+| `src/cron/service.ts` | `CronService` — scheduler engine with timer rearm, backoff, max 3 concurrent |
+| `src/cron/commands.ts` | `/cron` slash commands (list, add, remove, enable, disable, run) |
 | **Lark** | |
 | `src/lark/client.ts` | Lark SDK wrapper, card send/patch helpers |
+
+## Deployment
+
+Multi-stage Docker build (`Dockerfile`):
+- **Builder stage:** node:22-slim + build tools (python3/make/g++) for native modules → `npm ci` → `tsc` → `npm prune --omit=dev`
+- **Production stage:** node:22-slim + pm2 globally → copies pre-built `node_modules/` + `dist/` from builder
+- Non-root user `aiclaw` (uid 1001) required by Claude provider
+- CMD: `pm2-runtime ecosystem.config.cjs`
+
+```bash
+docker build -t ai-claw .
+docker run -d -p 3000:3000 --env-file .env -v $(pwd)/data:/app/data ai-claw
+```
 
 ## Conventions
 
@@ -109,3 +128,6 @@ npx vitest run test/tools/bash-exec.test.ts
 - Tests use `createTestDb()` from `test/helpers.ts` for in-memory SQLite
 - Environment is injected via `setEnv()` in tests, never reads `.env` directly in test code
 - Commit messages follow `type: description` format (e.g., `feat:`, `fix:`, `docs:`, `chore:`)
+- Skills use system-registered tool names in `allowed-tools` (e.g., `bash_exec`, `file_read`, `web_fetch` — not informal aliases like `Bash`, `Read`)
+- Prefix skill files/directories with `_` to disable them (loader skips `_`-prefixed entries)
+- Skills that depend on MCP tools (e.g., `notion-rag__search`) should include availability guards in their instructions

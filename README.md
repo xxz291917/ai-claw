@@ -1,6 +1,6 @@
 # AI Claw
 
-An lightweight AI assistant engine inspired by OpenClaw — built for company-internal deployment with multi-user auth, sandboxed tool execution, multi-channel access (Web & Lark), and a fully extensible skill/tool system.
+A lightweight AI assistant engine inspired by OpenClaw — built for company-internal deployment with multi-user auth, sandboxed tool execution, multi-channel access (Web & Lark), scheduled tasks, and a fully extensible skill/tool system.
 
 ## Quick Start
 
@@ -27,10 +27,24 @@ npm run test:watch   # Watch mode
 
 ## Production
 
+### PM2 (bare metal)
+
 ```bash
 npm run build
 pm2 start ecosystem.config.cjs
 ```
+
+### Docker
+
+```bash
+docker build -t ai-claw .
+docker run -d -p 3000:3000 --env-file .env \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/skills_extra:/app/skills_extra \
+  ai-claw
+```
+
+The Docker image uses a multi-stage build (node:22-slim) with `pm2-runtime` in foreground mode. A non-root user `aiclaw` (uid 1001) is created for Claude provider compatibility.
 
 ## Environment Variables
 
@@ -38,9 +52,9 @@ Copy `.env.example` and configure as needed:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `CHAT_PROVIDER` | Provider name (default: `claude`, or any registered name) | No |
 | `ANTHROPIC_API_KEY` | Claude API key (when provider = `claude`) | One of these |
 | `CHAT_API_KEY` | API key (when provider = `generic`) | is required |
+| `CHAT_PROVIDER` | Provider name (default: `claude`, or any registered name) | No |
 | `CHAT_MODEL` | Model name (generic provider) | Yes (generic) |
 | `CHAT_API_BASE` | API base URL (generic provider) | Yes (generic) |
 | `PROVIDER_{NAME}_API_BASE` | Auto-register additional providers | No |
@@ -48,12 +62,13 @@ Copy `.env.example` and configure as needed:
 | `PROVIDER_{NAME}_MODEL` | Model for additional provider | No |
 | `WORKSPACE_DIR` | AI workspace directory | Yes |
 | `PORT` | Server port | No, defaults to `8080` |
-| `SENTRY_AUTH_TOKEN` | Sentry API token | No |
-| `GH_TOKEN` | GitHub token | No |
+| `SENTRY_AUTH_TOKEN` | Sentry API token (enables `sentry_query` tool) | No |
+| `GH_TOKEN` | GitHub token (for `gh` CLI) | No |
 | `SKILLS_EXTRA_DIRS` | Extra skill directories (comma-separated) | No |
 | `LARK_APP_ID` | Lark (飞书) app ID | No |
 | `LARK_APP_SECRET` | Lark app secret | No |
 | `LARK_VERIFICATION_TOKEN` | Lark event verification token | No |
+| `NOTION_API_KEY` | Notion API key (enables notion skill) | No |
 
 ## Project Structure
 
@@ -66,14 +81,25 @@ src/
 ├── core/                 # Event bus, audit log
 ├── channels/             # Channel abstraction (Web, Lark)
 ├── chat/                 # Chat core (providers, registry, commands, compaction)
+├── cron/                 # Scheduled task engine (store, service, commands)
 ├── subagent/             # Background task manager
 ├── tools/                # Tool definitions (UnifiedToolDef)
-├── skills/               # Built-in skills (Markdown)
+├── skills/               # Built-in skills (Markdown + YAML frontmatter)
 ├── memory/               # User memory (FTS5)
 ├── sessions/             # Session management
 ├── lark/                 # Lark SDK client
 └── public/               # Frontend static files
 ```
+
+## Features
+
+- **Multi-provider AI**: Claude Agent SDK, any OpenAI-compatible API (DeepSeek, Kimi, etc.) via registry pattern
+- **Multi-channel**: Web (SSE streaming) and Lark (飞书) bot
+- **Skills system**: Markdown-based skills with YAML frontmatter, eligibility checking, and on-demand loading. Supports flat files and ClawHub directory format
+- **Scheduled tasks**: Cron engine with `at`/`every`/`cron` schedule types, SQLite persistence, exponential backoff
+- **Tools**: Sandboxed bash, file read/write, web fetch/search, Sentry queries, Claude Code delegation, MCP server integration
+- **Memory**: Per-user FTS5 full-text search with CJK support, auto-extraction from conversations
+- **Session management**: Persistent sessions with history compaction and token budget tracking
 
 ## Tech Stack
 
