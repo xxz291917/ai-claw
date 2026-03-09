@@ -1,5 +1,5 @@
 ---
-name: tech-answer
+name: hs-tech-answer
 description: "回答技术和业务问题。先搜索相关上下文（知识库、代码、网络），再整合信息给出准确、有依据的回答。当用户提出技术架构、实现方案、业务逻辑、API 用法、最佳实践等问题时使用。"
 tags: [tech, business, qa, research, 技术问答, 架构, 方案]
 allowed-tools: web_search, web_fetch, bash_exec, file_read, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
