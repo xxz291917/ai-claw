@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, dirname, basename } from "node:path";
 import { z } from "zod";
 import type { UnifiedToolDef } from "./types.js";
+import { isSensitiveFile } from "./sensitive-files.js";
 import { log } from "../logger.js";
 
 // ---------------------------------------------------------------------------
@@ -12,26 +13,6 @@ export type FileToolsConfig = {
   maxReadBytes?: number; // default 50000
   maxGrepResults?: number; // default 50
 };
-
-// ---------------------------------------------------------------------------
-// Sensitive file blocklist
-// ---------------------------------------------------------------------------
-const SENSITIVE_PATTERNS: RegExp[] = [
-  /^\.env($|\.)/, // .env, .env.local, .env.production, etc.
-  /^\.netrc$/,
-  /^\.npmrc$/,
-  /^credentials\.json$/i,
-  /^secrets?\./i,
-  /\.pem$/,
-  /\.key$/,
-  /^id_rsa/,
-  /^id_ed25519/,
-];
-
-function isSensitiveFile(filePath: string): boolean {
-  const name = basename(filePath);
-  return SENSITIVE_PATTERNS.some((p) => p.test(name));
-}
 
 // ---------------------------------------------------------------------------
 // safePath — security sandbox

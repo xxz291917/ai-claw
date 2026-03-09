@@ -3,11 +3,26 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import type { UnifiedToolDef } from "./types.js";
+import { isSensitiveFile } from "./sensitive-files.js";
 import { log } from "../logger.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 120s — enough for git, npm, sqlite3
 const MAX_TIMEOUT_MS = 600_000; // 10 minutes
 const DEFAULT_MAX_OUTPUT = 200_000; // 200KB (was 50KB)
+
+/** Keys containing these substrings are stripped from child process env */
+const SENSITIVE_ENV_SUBSTRINGS = ["KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL"];
+
+/** Remove sensitive env vars so child processes can't leak them via `env`/`printenv` */
+function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const safe: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) {
+    const upper = k.toUpperCase();
+    if (SENSITIVE_ENV_SUBSTRINGS.some((s) => upper.includes(s))) continue;
+    safe[k] = v;
+  }
+  return safe;
+}
 
 type BashExecConfig = {
   defaultCwd: string;
@@ -77,16 +92,27 @@ async function runCommand(
 ): Promise<string> {
   const { command } = args;
 
-  // Allowlist check — also reject shell metacharacters to prevent bypass
+  // Allowlist check — pipes allowed, but each segment must start with an allowed command
   if (allowedCommands) {
-    const bin = command.trim().split(/\s/)[0];
-    if (!allowedCommands.includes(bin)) {
-      return `Error: Command "${bin}" is not allowed. Allowed: ${allowedCommands.join(", ")}`;
+    // Block dangerous metacharacters (command chaining, subshells, redirects)
+    // Pipes (|) are allowed — each segment is checked individually below
+    if (/[;&`$(){}<>]/.test(command)) {
+      return `Error: Shell metacharacters (except pipe) are not allowed when command allowlist is active.`;
     }
-    // Block shell metacharacters that could chain additional commands
-    if (/[;|&`$(){}<>]/.test(command)) {
-      return `Error: Shell metacharacters are not allowed when command allowlist is active.`;
+    // Check every command in the pipeline
+    const segments = command.split("|").map((s) => s.trim());
+    for (const seg of segments) {
+      const bin = seg.split(/\s/)[0];
+      if (!allowedCommands.includes(bin)) {
+        return `Error: Command "${bin}" is not allowed. Allowed: ${allowedCommands.join(", ")}`;
+      }
     }
+  }
+
+  // Block commands that reference sensitive files (e.g. `cat .env`, `head /path/.env.local`)
+  const tokens = command.split(/\s+/);
+  if (tokens.some((t) => isSensitiveFile(t))) {
+    return `Error: Access to sensitive files is not allowed.`;
   }
 
   let cwd = args.cwd ? resolve(args.cwd) : defaultCwd;
@@ -151,7 +177,7 @@ function execStreaming(
   return new Promise((resolve) => {
     const child = spawn("/bin/sh", ["-c", command], {
       cwd: opts.cwd,
-      env: { ...process.env, TERM: "dumb", CUPS_SERVER: "" }, // Suppress terminal escape sequences and macOS printer dialogs
+      env: { ...sanitizeEnv(process.env), TERM: "dumb", CUPS_SERVER: "" },
       stdio: ["ignore", "pipe", "pipe"],
       detached: true, // Create process group for clean kill
     });

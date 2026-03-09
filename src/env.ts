@@ -25,7 +25,14 @@ const envSchema = z.object({
   BASH_EXEC_ENABLED: z.enum(["true", "false"]).default("true"),
   BASH_EXEC_TIMEOUT: z.coerce.number().default(120),
   BASH_EXEC_MAX_TIMEOUT: z.coerce.number().default(600),
-  BASH_EXEC_ALLOWED_COMMANDS: z.string().optional(),
+  BASH_EXEC_ALLOWED_COMMANDS: z
+    .string()
+    .default(
+      "git,gh,npm,node,curl,jq,ssh,sqlite3,pm2,make,claude,codex," +
+        "ls,cat,head,tail,grep,rg,find,wc,sort,cut,tr,awk,sed,diff," +
+        "echo,date,pwd,which,whoami,uname,basename,dirname,mkdir,cp,mv,touch,chmod,rm,tar,tee,xargs," +
+        "docker,python,python3,pip",
+    ),
 
   // Skills (extra directories for ClawHub-installed skills, comma-separated)
   SKILLS_EXTRA_DIRS: z.string().default("skills_extra"),
