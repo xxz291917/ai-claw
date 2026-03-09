@@ -10,7 +10,6 @@ import { ChannelManager } from "./channels/manager.js";
 import type { ChannelContext } from "./channels/types.js";
 import { handleConversation } from "./chat/conversation.js";
 import { LarkChannel } from "./channels/lark.js";
-import { createLarkClient, sendCard, patchCard, fetchRecentMessages, formatGroupContext } from "./lark/client.js";
 import { parseChatUsers, chatAuthMiddleware } from "./chat/auth.js";
 import { setupChatProvider } from "./chat/setup.js";
 import { buildToolSuite } from "./tools/suite.js";
@@ -142,20 +141,10 @@ export async function createApp(): Promise<{
 
   // Optionally register lark channel
   if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
-    const larkClient = createLarkClient(env);
     channelManager.register(new LarkChannel({
       provider: chatProvider,
+      lark: { appId: env.LARK_APP_ID, appSecret: env.LARK_APP_SECRET, verificationToken: env.LARK_VERIFICATION_TOKEN },
       maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
-      sendCard: (chatId, markdown) => sendCard(larkClient, chatId, markdown),
-      patchCard: (messageId, markdown) => patchCard(larkClient, messageId, markdown),
-      fetchGroupContext: async (chatId, afterMessageId) => {
-        const messages = await fetchRecentMessages(larkClient, chatId, {
-          afterMessageId,
-          limit: 20,
-        });
-        return formatGroupContext(messages);
-      },
-      verificationToken: env.LARK_VERIFICATION_TOKEN,
     }));
   }
 

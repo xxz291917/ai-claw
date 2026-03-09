@@ -5,13 +5,19 @@
  * (Lark requires < 3 s), then processes messages asynchronously using the
  * shared conversation pipeline.
  *
- * Pattern: send a "thinking" card -> run handleConversation -> patch the card
- * with the final reply.
+ * Group chat strategy:
+ * - ALL messages are stored to the session for context accumulation
+ * - Only @mentioned messages trigger AI response
+ * - Silent messages use cheap sliding-window truncation (no AI summarize)
+ * - @mentioned messages go through full handleConversation with AI compaction
  */
 
 import type { Channel, ChannelContext } from "./types.js";
 import type { ChatProvider } from "../chat/types.js";
+import type { LarkConfig } from "../lark/client.js";
+import { createLarkClient, sendCard, patchCard, fetchBotOpenId } from "../lark/client.js";
 import { handleConversation, type ConversationDeps } from "../chat/conversation.js";
+import { log } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -19,13 +25,11 @@ import { handleConversation, type ConversationDeps } from "../chat/conversation.
 
 export type LarkChannelConfig = {
   provider: ChatProvider;
+  lark: LarkConfig;
   maxHistoryMessages?: number;
   maxHistoryTokens?: number;
-  sendCard: (chatId: string, markdown: string) => Promise<string>;
-  patchCard: (messageId: string, markdown: string) => Promise<void>;
-  /** Fetch recent group chat messages for context injection. */
-  fetchGroupContext?: (chatId: string, afterMessageId?: string) => Promise<string>;
-  verificationToken?: string;
+  /** Max silent messages before sliding-window truncation. Default: 100. */
+  maxSilentMessages?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -83,6 +87,7 @@ type LarkEventV2 = {
       chat_type: string;
       message_type: string;
       content: string;
+      mentions?: Array<{ id: { open_id: string }; key: string }>;
     };
   };
 };
@@ -93,32 +98,50 @@ type LarkEventV2 = {
 
 export class LarkChannel implements Channel {
   readonly name = "lark";
-
-  /** Track last seen message_id per chatId for incremental context fetching. */
-  private lastMessageId = new Map<string, string>();
+  private client!: ReturnType<typeof createLarkClient>;
+  private botOpenId?: string;
 
   constructor(private config: LarkChannelConfig) {}
 
   async start(ctx: ChannelContext): Promise<void> {
     const { app } = ctx;
 
+    // Create Lark SDK client
+    this.client = createLarkClient(this.config.lark);
+
+    // Auto-fetch bot open_id for @mention detection in group chats
+    try {
+      this.botOpenId = await fetchBotOpenId(this.client);
+      log.info(`[lark] bot open_id: ${this.botOpenId}`);
+    } catch (err: any) {
+      log.warn(`[lark] failed to fetch bot open_id: ${err.message} — group @mention detection disabled`);
+    }
+
     app.post("/api/lark/webhook", async (c) => {
       const body = await c.req.json().catch(() => ({}));
 
-      // 1. URL verification challenge
+      // 1. Token verification — reject forged requests
+      const { verificationToken } = this.config.lark;
+      const incomingToken = body.token ?? body.header?.token;
+      if (verificationToken && incomingToken !== verificationToken) {
+        log.warn("[lark] webhook token mismatch — rejecting request");
+        return c.json({ code: 0 });
+      }
+
+      // 2. URL verification challenge
       if (body.type === "url_verification") {
         const verification = body as LarkUrlVerification;
         return c.json({ challenge: verification.challenge });
       }
 
-      // 2. Must be a v2 event
+      // 3. Must be a v2 event
       if (body.schema !== "2.0" || !body.event?.message) {
         return c.json({ code: 0 });
       }
 
       const event = body as LarkEventV2;
       const { message, sender } = event.event;
-      console.log(`[lark] webhook: chat_type=${message.chat_type} message_id=${message.message_id} chat_id=${message.chat_id}`);
+      log.debug(`[lark] webhook: chat_type=${message.chat_type} message_id=${message.message_id} chat_id=${message.chat_id}`);
 
       // 3. Only handle text messages
       if (message.message_type !== "text") {
@@ -143,28 +166,95 @@ export class LarkChannel implements Channel {
         return c.json({ code: 0 });
       }
 
-      // 6. Fire-and-forget: respond immediately, process async
+      // 6. Determine user identity
       const openId = sender.sender_id.open_id;
       const chatId = message.chat_id;
+      const isGroup = message.chat_type === "group";
       // Group chat: shared team identity (shared session/workflow/memory)
       // P2P chat: individual identity (isolated session/memory)
-      const userId = message.chat_type === "group"
+      const userId = isGroup
         ? `lark-group:${chatId}`
         : `lark:${openId}`;
 
-      const isGroup = message.chat_type === "group";
+      // 7. Group chat: check if bot is @mentioned
+      const isMentioned = isGroup && this.botOpenId
+        ? message.mentions?.some((m) => m.id?.open_id === this.botOpenId) ?? false
+        : !isGroup; // P2P always treated as "mentioned"
 
-      // Kick off async processing (not awaited)
-      this.processMessage(ctx, userId, chatId, text, isGroup, message.message_id).catch((err) => {
-        console.error("[lark] async processing error:", err);
-      });
+      // Strip @mention placeholders (e.g. @_user_1) from message text
+      if (message.mentions?.length) {
+        for (const m of message.mentions) {
+          if (m.key) text = text.replace(m.key, "");
+        }
+        text = text.trim();
+      }
+
+      if (!text.trim()) {
+        return c.json({ code: 0 });
+      }
+
+      if (isMentioned) {
+        // @mentioned or P2P → full AI response
+        this.processMessage(ctx, userId, chatId, text).catch((err) => {
+          log.error("[lark] async processing error:", err);
+        });
+      } else {
+        // Group message without @mention → silent store only
+        this.storeSilentMessage(ctx, userId, chatId, openId, text).catch((err) => {
+          log.error("[lark] silent store error:", err);
+        });
+      }
 
       return c.json({ code: 0 });
     });
   }
 
   // ---------------------------------------------------------------------------
-  // Async message processing
+  // Silent message storage (group chat, not @mentioned)
+  // ---------------------------------------------------------------------------
+
+  private async storeSilentMessage(
+    ctx: ChannelContext,
+    userId: string,
+    chatId: string,
+    senderOpenId: string,
+    text: string,
+  ): Promise<void> {
+    const { sessionManager } = ctx;
+
+    // Find or create session
+    let session = sessionManager.findActive(userId, "lark");
+    if (!session) {
+      session = sessionManager.create({
+        userId,
+        channel: "lark",
+        channelId: chatId,
+        provider: this.config.provider.name,
+      });
+    }
+
+    // Append as user message with sender tag for context
+    sessionManager.appendMessage(session.id, {
+      role: "user",
+      content: `[${senderOpenId}] ${text}`,
+    });
+
+    // Sliding-window truncation: cheap, no AI call
+    const maxSilent = this.config.maxSilentMessages ?? 100;
+    const messageCount = sessionManager.countMessages(session.id);
+    if (messageCount > maxSilent) {
+      const keep = Math.floor(maxSilent * 0.75);
+      sessionManager.compactMessages(session.id, keep, {
+        role: "system",
+        content: `[Earlier ${messageCount - keep} group messages omitted]`,
+        type: "summary",
+      });
+      log.info(`[lark] silent compact: ${messageCount} → ${keep + 1} messages (chat=${chatId})`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Full message processing (@mentioned or P2P)
   // ---------------------------------------------------------------------------
 
   private async processMessage(
@@ -172,39 +262,19 @@ export class LarkChannel implements Channel {
     userId: string,
     chatId: string,
     text: string,
-    isGroup?: boolean,
-    messageId?: string,
   ): Promise<void> {
     const { sessionManager, eventLog, memoryManager } = ctx;
-    const { provider, sendCard, patchCard, fetchGroupContext } = this.config;
+    const { provider } = this.config;
+    const { client } = this;
 
     // 1. Send "thinking" card
-    const cardMessageId = await sendCard(chatId, "思考中...");
+    const cardMessageId = await sendCard(client, chatId, "思考中...");
 
-    // 2. For group chats, fetch incremental context
-    let enrichedText = text;
-    if (isGroup && fetchGroupContext) {
-      try {
-        const afterId = this.lastMessageId.get(chatId);
-        const context = await fetchGroupContext(chatId, afterId);
-        if (context) {
-          enrichedText = `[群聊上下文]\n${context}\n\n[当前消息]\n${text}`;
-        }
-      } catch (err: any) {
-        console.error("[lark] fetch group context error:", err.message ?? err);
-        // Non-fatal: proceed without context
-      }
-    }
-    // Update last seen message_id for next incremental fetch
-    if (messageId) {
-      this.lastMessageId.set(chatId, messageId);
-    }
-
-    // 3. Find or reuse existing session
+    // 2. Find or reuse existing session
     const existingSession = sessionManager.findActive(userId, "lark");
     const sessionId = existingSession?.id;
 
-    // 4. Build conversation deps
+    // 3. Build conversation deps
     const convDeps: ConversationDeps = {
       provider,
       sessionManager,
@@ -214,24 +284,24 @@ export class LarkChannel implements Channel {
       maxHistoryTokens: this.config.maxHistoryTokens,
     };
 
-    // 5. Run conversation pipeline
+    // 4. Run conversation pipeline (handles compaction with AI summarize)
     try {
       const result = await handleConversation({
         userId,
-        message: enrichedText,
+        message: text,
         sessionId,
         channel: "lark",
         channelId: chatId,
         deps: convDeps,
       });
 
-      // 6. Patch the card with the final reply
-      const reply = result.text || result.error || "\uFF08\u65E0\u56DE\u590D\uFF09";
-      await patchCard(cardMessageId, reply);
+      // 5. Patch the card with the final reply
+      const reply = result.text || result.error || "（无回复）";
+      await patchCard(client, cardMessageId, reply);
     } catch (err: any) {
-      console.error("[lark] conversation error:", err.message ?? err);
+      log.error("[lark] conversation error:", err.message ?? err);
       try {
-        await patchCard(cardMessageId, `出错了: ${err.message ?? "unknown error"}`);
+        await patchCard(client, cardMessageId, `出错了: ${err.message ?? "unknown error"}`);
       } catch {
         /* best-effort */
       }
