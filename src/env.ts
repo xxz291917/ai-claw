@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 const envSchema = z.object({
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   PORT: z.coerce.number().default(8080),
-  WORKSPACE_DIR: z.string().default(".").transform((p) => resolve(p)),
+  WORKSPACE_DIR: z.string().default("data/workspace").transform((p) => resolve(p)),
 
   // AI providers
   ANTHROPIC_API_KEY: z.string().optional(),

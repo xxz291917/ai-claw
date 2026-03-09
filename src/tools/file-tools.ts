@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, basename } from "node:path";
 import { z } from "zod";
 import type { UnifiedToolDef } from "./types.js";
 import { log } from "../logger.js";
@@ -14,16 +14,40 @@ export type FileToolsConfig = {
 };
 
 // ---------------------------------------------------------------------------
+// Sensitive file blocklist
+// ---------------------------------------------------------------------------
+const SENSITIVE_PATTERNS: RegExp[] = [
+  /^\.env($|\.)/, // .env, .env.local, .env.production, etc.
+  /^\.netrc$/,
+  /^\.npmrc$/,
+  /^credentials\.json$/i,
+  /^secrets?\./i,
+  /\.pem$/,
+  /\.key$/,
+  /^id_rsa/,
+  /^id_ed25519/,
+];
+
+function isSensitiveFile(filePath: string): boolean {
+  const name = basename(filePath);
+  return SENSITIVE_PATTERNS.some((p) => p.test(name));
+}
+
+// ---------------------------------------------------------------------------
 // safePath — security sandbox
 // ---------------------------------------------------------------------------
 /**
  * Resolve `userPath` against `workspaceDir` and verify it stays within the
- * workspace boundary. Throws if the resolved path escapes.
+ * workspace boundary. Also blocks access to sensitive files (.env, keys, etc.).
+ * Throws if the resolved path escapes or targets a sensitive file.
  */
 export function safePath(userPath: string, workspaceDir: string): string {
   const resolved = resolve(workspaceDir, userPath);
   if (resolved !== workspaceDir && !resolved.startsWith(workspaceDir + "/")) {
     throw new Error(`Path outside workspace: ${userPath}`);
+  }
+  if (isSensitiveFile(resolved)) {
+    throw new Error(`Access denied: ${basename(resolved)} is a sensitive file`);
   }
   return resolved;
 }
