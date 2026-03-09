@@ -163,6 +163,28 @@ export class SessionManager {
     txn();
   }
 
+  /**
+   * Sliding-window trim: if message count exceeds threshold, keep only the
+   * most recent `keepCount` messages and replace earlier ones with a placeholder.
+   * Returns the number of messages deleted, or 0 if no trim was needed.
+   */
+  trimMessages(
+    sessionId: string,
+    threshold: number,
+    keepCount: number,
+    label = "messages",
+  ): number {
+    const total = this.countMessages(sessionId);
+    if (total <= threshold) return 0;
+
+    this.compactMessages(sessionId, keepCount, {
+      role: "system",
+      content: `[Earlier ${total - keepCount} ${label} omitted]`,
+      type: "summary",
+    });
+    return total - keepCount;
+  }
+
   countMessages(sessionId: string): number {
     const row = this.db
       .prepare("SELECT COUNT(*) as count FROM messages WHERE session_id = ?")

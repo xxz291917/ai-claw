@@ -214,6 +214,14 @@ export async function handleConversation(
 
       history = compacted;
     } else {
+      // DB hygiene: native context providers manage their own history,
+      // but we still need to prevent unbounded message growth in the DB.
+      const trimmed = sessionManager.trimMessages(
+        sessionId, maxHistoryMessages * 2, maxHistoryMessages,
+      );
+      if (trimmed > 0) {
+        log.info(`[conversation] native context DB trim: removed ${trimmed} messages`);
+      }
       log.info(`[conversation] native context provider — skipping history (${Date.now() - t0}ms)`);
     }
 

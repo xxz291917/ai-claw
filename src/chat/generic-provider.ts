@@ -95,7 +95,7 @@ export class GenericProvider implements ChatProvider {
 
   async *stream(req: ChatRequest): AsyncIterable<ChatEvent> {
     const t0 = Date.now();
-    const maxTurns = this.config.maxTurns ?? 10;
+    const maxTurns = this.config.maxTurns ?? 20;
 
     const messages: Message[] = [];
     if (this.config.systemPrompt) {

@@ -147,6 +147,7 @@ export function buildDefaultRegistry(
           model: config.model ?? config.name,
           systemPrompt: selectPrompt(factoryOpts),
           tools: opts.genericTools,
+          maxTurns: env.CHAT_MAX_TURNS ? Number(env.CHAT_MAX_TURNS) : undefined,
           maxToolResultChars: config.maxToolResultChars,
           maxContextTokens: config.maxContextTokens,
           fetchTimeout: config.fetchTimeout,
@@ -166,6 +167,7 @@ export function buildDefaultRegistry(
           model: env.CHAT_MODEL ?? "deepseek-chat",
           systemPrompt: selectPrompt(factoryOpts),
           tools: opts.genericTools,
+          maxTurns: env.CHAT_MAX_TURNS ? Number(env.CHAT_MAX_TURNS) : undefined,
           maxToolResultChars: env.CHAT_MAX_TOOL_RESULT_CHARS
             ? Number(env.CHAT_MAX_TOOL_RESULT_CHARS)
             : undefined,

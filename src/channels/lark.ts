@@ -109,12 +109,17 @@ export class LarkChannel implements Channel {
     // Create Lark SDK client
     this.client = createLarkClient(this.config.lark);
 
-    // Auto-fetch bot open_id for @mention detection in group chats
-    try {
-      this.botOpenId = await fetchBotOpenId(this.client);
-      log.info(`[lark] bot open_id: ${this.botOpenId}`);
-    } catch (err: any) {
-      log.warn(`[lark] failed to fetch bot open_id: ${err.message} — group @mention detection disabled`);
+    // Use pre-configured open_id or fetch from API
+    if (this.config.lark.openId) {
+      this.botOpenId = this.config.lark.openId;
+      log.info(`[lark] bot open_id (from config): ${this.botOpenId}`);
+    } else {
+      try {
+        this.botOpenId = await fetchBotOpenId(this.client);
+        log.info(`[lark] bot open_id (from API): ${this.botOpenId}`);
+      } catch (err: any) {
+        log.warn(`[lark] failed to fetch bot open_id: ${err.message} — group @mention detection disabled`);
+      }
     }
 
     app.post("/api/lark/webhook", async (c) => {
@@ -241,15 +246,10 @@ export class LarkChannel implements Channel {
 
     // Sliding-window truncation: cheap, no AI call
     const maxSilent = this.config.maxSilentMessages ?? 100;
-    const messageCount = sessionManager.countMessages(session.id);
-    if (messageCount > maxSilent) {
-      const keep = Math.floor(maxSilent * 0.75);
-      sessionManager.compactMessages(session.id, keep, {
-        role: "system",
-        content: `[Earlier ${messageCount - keep} group messages omitted]`,
-        type: "summary",
-      });
-      log.info(`[lark] silent compact: ${messageCount} → ${keep + 1} messages (chat=${chatId})`);
+    const keep = Math.floor(maxSilent * 0.75);
+    const trimmed = sessionManager.trimMessages(session.id, maxSilent, keep, "group messages");
+    if (trimmed > 0) {
+      log.info(`[lark] silent compact: removed ${trimmed} messages (chat=${chatId})`);
     }
   }
 

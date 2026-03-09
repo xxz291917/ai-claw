@@ -19,9 +19,11 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { scanSkillDirs } from "../skills/loader.js";
+import { scanSkillDirs, type SkillEntry } from "../skills/loader.js";
 
 export type PromptMode = "full" | "minimal";
+
+const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 export type PromptContext = {
   workspaceDir: string;
@@ -69,7 +71,7 @@ const BOOTSTRAP_FILES: BootstrapFile[] = [
 export function buildSystemPrompt(ctx: PromptContext): string {
   const mode = ctx.mode ?? "full";
   const maxChars = ctx.bootstrapMaxChars ?? 20_000;
-  const promptsDir = resolve(ctx.promptsDir ?? resolve(ctx.workspaceDir, "prompts"));
+  const promptsDir = ctx.promptsDir ?? resolve(ctx.workspaceDir, "prompts");
   const sections: string[] = [];
   const absoluteWorkspace = resolve(ctx.workspaceDir);
 
@@ -80,7 +82,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       : ""
   }
 
-Workspace: ${absoluteWorkspace} | Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone} | Platform: ${process.platform} ${process.arch}`);
+Workspace: ${absoluteWorkspace} | Timezone: ${TIMEZONE} | Platform: ${process.platform} ${process.arch}`);
 
   // --- 2. Safety (always included) ---
   sections.push(`## Safety
@@ -112,17 +114,12 @@ Put internal reasoning inside \`<think>...</think>\` tags. Only text outside is 
     const skills = scanSkillDirs(ctx.skillsDirs).filter((s) => s.eligibility.eligible);
     if (skills.length > 0) {
       const MAX_SKILLS = 150;
-      const MAX_CHARS = 30_000;
+      const MAX_SKILL_BLOCK_CHARS = 30_000;
       const displayed = skills.slice(0, MAX_SKILLS);
-      const skillXml = displayed
-        .map((s) => {
-          const tags = s.tags?.length ? `\n    <tags>${s.tags.join(", ")}</tags>` : "";
-          return `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description}</description>\n    <location>${s.filePath}</location>${tags}\n  </skill>`;
-        })
-        .join("\n");
+      const skillXml = displayed.map(skillToXml).join("\n");
       let skillBlock = `<available_skills>\n${skillXml}\n</available_skills>`;
-      if (skillBlock.length > MAX_CHARS) {
-        skillBlock = skillBlock.slice(0, MAX_CHARS) + "\n<!-- truncated -->";
+      if (skillBlock.length > MAX_SKILL_BLOCK_CHARS) {
+        skillBlock = skillBlock.slice(0, MAX_SKILL_BLOCK_CHARS) + "\n<!-- truncated -->";
       }
       if (skills.length > MAX_SKILLS) {
         skillBlock += `\n<!-- ${skills.length - MAX_SKILLS} additional skills omitted -->`;
@@ -161,6 +158,22 @@ function tryReadFile(path: string): string | null {
   } catch {
     return null;
   }
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function skillToXml(s: SkillEntry): string {
+  const lines = [
+    `  <skill>`,
+    `    <name>${escapeXml(s.name)}</name>`,
+    `    <description>${escapeXml(s.description)}</description>`,
+    `    <location>${s.filePath}</location>`,
+  ];
+  if (s.tags?.length) lines.push(`    <tags>${s.tags.join(", ")}</tags>`);
+  lines.push(`  </skill>`);
+  return lines.join("\n");
 }
 
 /**

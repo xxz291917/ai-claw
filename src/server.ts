@@ -144,7 +144,7 @@ export async function createApp(): Promise<{
   if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
     channelManager.register(new LarkChannel({
       provider: chatProvider,
-      lark: { appId: env.LARK_APP_ID, appSecret: env.LARK_APP_SECRET, verificationToken: env.LARK_VERIFICATION_TOKEN },
+      lark: { appId: env.LARK_APP_ID, appSecret: env.LARK_APP_SECRET, verificationToken: env.LARK_VERIFICATION_TOKEN, openId: env.LARK_OPEN_ID },
       maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
     }));
   }

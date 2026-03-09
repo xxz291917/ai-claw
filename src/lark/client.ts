@@ -6,6 +6,8 @@ export type LarkConfig = {
   appId: string;
   appSecret: string;
   verificationToken?: string;
+  /** Pre-configured bot open_id. If set, skips the API call to fetch it. */
+  openId?: string;
 };
 
 export function createLarkClient(config: LarkConfig): LarkClient {
