@@ -1,6 +1,6 @@
 ---
 name: hs-bug-analysis
-description: "分析和诊断 bug 的结构化流程。当用户提到 bug、报错、异常、Sentry issue、线上问题、白屏、崩溃、500 错误、功能异常、排查问题等，都应使用此 skill。支持 Sentry issue 号直接分析，也支持人工描述的问题。"
+description: "结构化 bug 分析：收集信息 → 定位代码 → 根因分析 → 修复方案。支持 Sentry issue 和人工描述。"
 tags: [bug, error, sentry, debugging, analysis, 报错, 异常, 排查, 线上问题, crash, 500, 白屏]
 allowed-tools: bash_exec, file_read, web_fetch, sentry_query, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
 ---
@@ -51,12 +51,14 @@ sentry_query issue <issue_id>
 
 ### 2. 搜索相关上下文
 
-**需求和历史** — 用 `notion-rag__search`：
+> 注意：`notion-rag__search`、`code-rag__*` 为 MCP 工具，仅在对应 MCP 服务连接时可用。如果不可用，跳过相关步骤，直接根据 Sentry 数据和本地文件分析。
+
+**需求和历史** — 用 `notion-rag__search`（如可用）：
 - 搜索该功能的需求文档、设计决策、已知限制
 - 关键词：功能名、模块名、错误关键词
 - 查找是否有相关的历史 bug 记录或已知问题
 
-**代码定位** — 用 `code-rag__search_code` 和 `code-rag__get_function`：
+**代码定位** — 用 `code-rag__search_code` 和 `code-rag__get_function`（如可用）：
 - 从 Sentry stacktrace 中提取文件名和函数名进行搜索
 - 搜索错误关键词、相关模块
 - 找到最可能出问题的代码路径

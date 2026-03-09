@@ -2,7 +2,7 @@
 name: weather
 description: "Get current weather and forecasts. No API key required. Use when user asks about weather."
 tags: [weather, utility]
-allowed-tools: Bash
+allowed-tools: bash_exec
 ---
 
 # Weather

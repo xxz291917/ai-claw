@@ -2,7 +2,7 @@
 name: coding-agent
 description: "Run external coding agents (Claude Code, Codex CLI) as sub-processes for delegated tasks. Use when orchestrating other AI agents."
 tags: [agent, automation, delegation]
-allowed-tools: Bash
+allowed-tools: bash_exec
 requires-bins: [claude]
 ---
 

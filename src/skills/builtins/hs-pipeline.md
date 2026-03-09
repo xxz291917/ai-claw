@@ -2,7 +2,7 @@
 name: hs-pipeline
 description: "End-to-end engineering pipeline: bug analysis → solution → code change → PR → release. Use when asked to handle a complete issue lifecycle from investigation to deployment, or when the user says 'help me fix and release issue #X'."
 tags: [pipeline, workflow, automation]
-allowed-tools: bash_exec, file_read, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
+allowed-tools: bash_exec, file_read, get_skill, notion-rag__search, code-rag__search_code, code-rag__get_function, code-rag__get_file_structure
 requires-bins: [git, gh, claude]
 ---
 

@@ -53,12 +53,14 @@ Check result — if clone fails, report the error and stop.
 
 Before writing any code, use the available knowledge sources to understand the task fully.
 
-**需求和背景** — 用 `notion-rag__search` 查询 Notion：
+> 注意：`notion-rag__search`、`code-rag__*` 为 MCP 工具，仅在对应 MCP 服务连接时可用。如果不可用，跳过相关步骤，直接使用本地文件和 `bash_exec` 分析代码。
+
+**需求和背景** — 用 `notion-rag__search` 查询 Notion（如可用）：
 - 搜索与任务相关的需求文档、设计决策、已知问题
 - 关键词：issue 标题、模块名、功能描述
 - 如果找到相关文档，摘录关键约束和预期行为
 
-**代码上下文** — 用 `code-rag__search_code` 和 `code-rag__get_function`：
+**代码上下文** — 用 `code-rag__search_code` 和 `code-rag__get_function`（如可用）：
 - 搜索与任务相关的现有实现、类似函数、调用方式
 - 查看项目结构：`code-rag__get_file_structure`
 - 理解代码风格和模式，实现时保持一致

@@ -31,8 +31,8 @@ allowed-tools: web_search, web_fetch, bash_exec, file_read, notion-rag__search, 
 
 | 信息源 | 适用场景 | 工具 |
 |--------|---------|------|
-| 项目知识库 | 涉及团队业务、已有决策、需求文档 | `notion-rag__search` |
-| 项目代码 | 涉及现有实现、代码架构 | `code-rag__search_code`, `code-rag__get_function` |
+| 项目知识库 | 涉及团队业务、已有决策、需求文档 | `notion-rag__search`（MCP，如可用） |
+| 项目代码 | 涉及现有实现、代码架构 | `code-rag__search_code`（MCP，如可用） |
 | 网络搜索 | 通用技术问题、最新动态、最佳实践 | `web_search` |
 | 技术文档 | 需要阅读官方文档、API 参考 | `web_fetch` |
 

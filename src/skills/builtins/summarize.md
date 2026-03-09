@@ -2,7 +2,7 @@
 name: summarize
 description: "Summarize or extract text/transcripts from URLs, podcasts, and local files. Use when asked to summarize a link, article, or video."
 tags: [summarization, content, youtube]
-allowed-tools: Bash
+allowed-tools: bash_exec
 ---
 
 # Summarize

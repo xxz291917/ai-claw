@@ -2,7 +2,7 @@
 name: review-pr
 description: "Structured workflow for reviewing GitHub pull requests. Use when asked to review a PR or provide code review feedback."
 tags: [code-review, quality, git]
-allowed-tools: Read, Grep, Glob, Bash
+allowed-tools: bash_exec, file_read
 requires-env: [GH_TOKEN]
 requires-bins: [gh]
 ---

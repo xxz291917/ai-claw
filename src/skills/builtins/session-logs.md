@@ -2,7 +2,7 @@
 name: session-logs
 description: "Search and analyze AI Claw session logs and conversation history. Use when user asks about prior conversations or session data."
 tags: [debugging, sessions, analytics]
-allowed-tools: Read, Grep, Bash
+allowed-tools: bash_exec, file_read
 ---
 
 # Session Logs

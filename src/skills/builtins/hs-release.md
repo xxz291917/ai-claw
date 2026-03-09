@@ -36,8 +36,8 @@ gh api repos/<repo>/releases/latest --jq '.tag_name'
 git -C <repo_path> log <last_tag>..HEAD --oneline
 ```
 
-查找相关 Notion 文档（release notes 草稿、计划上线的功能）：
-- 用 `notion-rag__search` 搜索："release" / "上线" / 版本号
+查找相关 Notion 文档（如 `notion-rag__search` MCP 工具可用）：
+- 搜索："release" / "上线" / 版本号
 
 列出本次 release 包含的内容，让用户确认：
 ```
