@@ -195,7 +195,7 @@ Markdown 文件，带 YAML frontmatter（name, description, tags, allowed-tools,
 | 文件 | 用途 |
 |------|------|
 | `coding-agent.md` | 通用编码任务委托 |
-| `review-pr.md` | PR 审查 |
+| `hs-review-pr.md` | PR 审查 |
 | `github.md` | GitHub 操作 |
 | `feishu-doc.md` / `notion.md` | 文档操作 |
 | `summarize.md` / `weather.md` / `session-logs.md` | 其他辅助技能 |

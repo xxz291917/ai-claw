@@ -216,15 +216,15 @@ CI 状态: <passing / pending / failing>
 
 **目标**：对 PR 进行结构化代码审查。
 
-加载并执行 `review-pr` skill：
+加载并执行 `hs-review-pr` skill：
 
 ```
-file_read the `review-pr` skill from <available_skills>
+file_read the `hs-review-pr` skill from <available_skills>
 ```
 
 输入：Stage 3 产出的 PR URL/编号。
 
-执行 review-pr 的完整流程（fetch → analyze → quality → security → review）。
+执行 hs-review-pr 的完整流程（fetch → analyze → quality → security → review）。
 
 Review 完成后，根据结果判断：
 

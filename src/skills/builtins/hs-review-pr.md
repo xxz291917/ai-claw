@@ -1,5 +1,5 @@
 ---
-name: review-pr
+name: hs-review-pr
 description: "Structured workflow for reviewing GitHub pull requests. Use when asked to review a PR or provide code review feedback."
 tags: [code-review, quality, git]
 allowed-tools: bash_exec, file_read
