@@ -12,6 +12,9 @@ const DEFAULT_MAX_OUTPUT = 200_000; // 200KB (was 50KB)
 /** Keys containing these substrings are stripped from child process env */
 const SENSITIVE_ENV_SUBSTRINGS = ["KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL"];
 
+/** Env var prefixes that enable library/binary injection — always blocked */
+const DANGEROUS_PREFIXES = ["LD_", "DYLD_", "BASH_FUNC_"];
+
 /** Exact env var names allowed through despite matching SENSITIVE_ENV_SUBSTRINGS */
 const ENV_ALLOWLIST = new Set(["GH_TOKEN"]);
 
@@ -39,6 +42,7 @@ function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   for (const [k, v] of Object.entries(env)) {
     const upper = k.toUpperCase();
     if (SENSITIVE_ENV_SUBSTRINGS.some((s) => upper.includes(s)) && !ENV_ALLOWLIST.has(k)) continue;
+    if (DANGEROUS_PREFIXES.some((p) => upper.startsWith(p))) continue;
     safe[k] = v;
   }
   return safe;
