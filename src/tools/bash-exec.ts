@@ -12,6 +12,9 @@ const DEFAULT_MAX_OUTPUT = 200_000; // 200KB (was 50KB)
 /** Keys containing these substrings are stripped from child process env */
 const SENSITIVE_ENV_SUBSTRINGS = ["KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL"];
 
+/** Exact env var names allowed through despite matching SENSITIVE_ENV_SUBSTRINGS */
+const ENV_ALLOWLIST = new Set(["GH_TOKEN"]);
+
 /** Sensitive file patterns — blocks commands referencing .env, keys, credentials, etc. */
 const SENSITIVE_FILE_PATTERNS: RegExp[] = [
   /^\.env($|\.)/, // .env, .env.local, .env.production, etc.
@@ -35,7 +38,7 @@ function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const safe: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(env)) {
     const upper = k.toUpperCase();
-    if (SENSITIVE_ENV_SUBSTRINGS.some((s) => upper.includes(s))) continue;
+    if (SENSITIVE_ENV_SUBSTRINGS.some((s) => upper.includes(s)) && !ENV_ALLOWLIST.has(k)) continue;
     safe[k] = v;
   }
   return safe;
