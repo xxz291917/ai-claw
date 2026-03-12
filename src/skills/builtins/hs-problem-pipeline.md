@@ -38,17 +38,17 @@ Notion Problem → [✅] → Tech Design → [✅] → Implement + PR → [✅] 
 
 根据用户提供的输入定位 Problem：
 
-- **Notion URL/ID**：直接用 `bash_exec` 调 Notion API 获取页面内容和属性
+- **Notion URL/ID**：直接用 `bash_exec` 调 Notion API 获取页面属性和 Markdown 正文
 
 ```bash
 NOTION_KEY="$NOTION_API_KEY"
-# 获取页面属性
+# 获取页面属性（标题、状态、优先级、关联等）
 curl -s "https://api.notion.com/v1/pages/{page_id}" \
   -H "Authorization: Bearer $NOTION_KEY" \
   -H "Notion-Version: 2025-09-03"
 
-# 获取页面正文（blocks）
-curl -s "https://api.notion.com/v1/blocks/{page_id}/children?page_size=100" \
+# 获取页面正文（Markdown 格式，一次性拿到完整内容）
+curl -s "https://api.notion.com/v1/pages/{page_id}/markdown" \
   -H "Authorization: Bearer $NOTION_KEY" \
   -H "Notion-Version: 2025-09-03"
 ```

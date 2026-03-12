@@ -2,7 +2,8 @@ import { z } from "zod";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
-import type { UnifiedToolDef } from "./types.js";
+import type { UnifiedToolDef, ToolContext } from "./types.js";
+import type { UserSecretsManager } from "../secrets/manager.js";
 import { log } from "../logger.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 120s — enough for git, npm, sqlite3
@@ -75,7 +76,58 @@ type BashExecConfig = {
   maxTimeoutMs?: number;
   maxOutputChars?: number;
   allowedCommands?: string[];
+  secretsManager?: UserSecretsManager;
+  /** Secret keys allowed for injection (from skill `secrets` declarations). When set, only these keys are injected. */
+  allowedSecretKeys?: string[];
 };
+
+/**
+ * Resolve which user secrets to inject as env vars.
+ *
+ * Scoping logic:
+ * 1. If `inject_secrets` is provided, only inject those keys (intersected with allowedSecretKeys)
+ * 2. If `allowedSecretKeys` is set (from skill `secrets` declarations), inject only those
+ * 3. If neither is set, inject all user secrets (backward compat / no skills declare secrets)
+ */
+function resolveSecrets(
+  config: BashExecConfig,
+  userId: string,
+  injectSecrets?: string[],
+): Record<string, string> {
+  if (!config.secretsManager) return {};
+
+  const all = config.secretsManager.getAllDecrypted(userId);
+  if (Object.keys(all).length === 0) return {};
+
+  // No scoping configured — inject all (backward compat)
+  if (!config.allowedSecretKeys && !injectSecrets) return all;
+
+  const allowedSet = config.allowedSecretKeys
+    ? new Set(config.allowedSecretKeys.map((k) => k.toUpperCase()))
+    : null;
+
+  // Determine which keys to inject
+  const requestedKeys = injectSecrets ?? config.allowedSecretKeys ?? [];
+  const result: Record<string, string> = {};
+
+  for (const key of requestedKeys) {
+    const upper = key.toUpperCase();
+    // If allowedSecretKeys is configured, enforce it even for explicit requests
+    if (allowedSet && !allowedSet.has(upper)) {
+      log.warn(`[bash_exec] Secret "${key}" not in allowed keys — skipped`);
+      continue;
+    }
+    // Find the actual key in user secrets (case-insensitive match)
+    for (const [actualKey, value] of Object.entries(all)) {
+      if (actualKey.toUpperCase() === upper) {
+        result[actualKey] = value;
+        break;
+      }
+    }
+  }
+
+  return result;
+}
 
 /**
  * Creates a bash_exec tool that executes shell commands locally.
@@ -112,6 +164,10 @@ export function createBashExecTool(config: BashExecConfig): UnifiedToolDef {
         .string()
         .optional()
         .describe("Working directory. Omit to use workspace root — do NOT guess paths."),
+      inject_secrets: z
+        .array(z.string())
+        .optional()
+        .describe("Secret keys to inject as env vars for this command (e.g. [\"GH_TOKEN\"]). Only keys declared by skills are allowed."),
     },
     parameters: {
       type: "object",
@@ -119,11 +175,17 @@ export function createBashExecTool(config: BashExecConfig): UnifiedToolDef {
         command: { type: "string", description: "Shell command to execute" },
         timeout: { type: "number", description: "Timeout in seconds (default 120, max 600)" },
         cwd: { type: "string", description: "Working directory. Omit to use workspace root" },
+        inject_secrets: {
+          type: "array",
+          items: { type: "string" },
+          description: "Secret keys to inject as env vars for this command (e.g. [\"GH_TOKEN\"]). Only keys declared by skills are allowed.",
+        },
       },
       required: ["command"],
     },
-    execute: async (args: { command: string; timeout?: number; cwd?: string }, _ctx) => {
-      return runCommand(args, resolvedDefaultCwd, defaultTimeout, maxTimeout, maxOutput, config.allowedCommands);
+    execute: async (args: { command: string; timeout?: number; cwd?: string; inject_secrets?: string[] }, ctx: ToolContext) => {
+      const userEnv = resolveSecrets(config, ctx.userId, args.inject_secrets);
+      return runCommand(args, resolvedDefaultCwd, defaultTimeout, maxTimeout, maxOutput, config.allowedCommands, userEnv);
     },
   };
 }
@@ -135,6 +197,7 @@ async function runCommand(
   maxTimeout: number,
   maxOutput: number,
   allowedCommands?: string[],
+  userEnv?: Record<string, string>,
 ): Promise<string> {
   const { command } = args;
 
@@ -181,7 +244,7 @@ async function runCommand(
   log.info(`[bash_exec] Running: ${command} (cwd=${cwd}, timeout=${timeoutMs}ms)`);
 
   try {
-    const result = await execStreaming(command, { cwd, timeoutMs, maxOutput });
+    const result = await execStreaming(command, { cwd, timeoutMs, maxOutput, userEnv });
 
     let output = `$ ${command}\n`;
     if (result.stdout) output += result.stdout;
@@ -218,12 +281,12 @@ type ExecResult = {
  */
 function execStreaming(
   command: string,
-  opts: { cwd: string; timeoutMs: number; maxOutput: number },
+  opts: { cwd: string; timeoutMs: number; maxOutput: number; userEnv?: Record<string, string> },
 ): Promise<ExecResult> {
   return new Promise((resolve) => {
     const child = spawn("/bin/sh", ["-c", command], {
       cwd: opts.cwd,
-      env: { ...sanitizeEnv(process.env), TERM: "dumb", CUPS_SERVER: "" },
+      env: { ...sanitizeEnv(process.env), TERM: "dumb", CUPS_SERVER: "", ...opts.userEnv },
       stdio: ["ignore", "pipe", "pipe"],
       detached: true, // Create process group for clean kill
     });

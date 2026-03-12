@@ -3,6 +3,7 @@ import type { ChatEvent } from "./types.js";
 import type { Session } from "../sessions/types.js";
 import type { SubagentManager } from "../subagent/manager.js";
 import type { UserSettingsManager } from "../settings/manager.js";
+import type { UserSecretsManager } from "../secrets/manager.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { CronService } from "../cron/service.js";
 import { installSkill, uninstallSkill, searchSkills } from "./clawhub.js";
@@ -21,6 +22,7 @@ export type CommandContext = {
   skillsDirs: string[];
   subagentManager?: SubagentManager;
   userSettingsManager?: UserSettingsManager;
+  userSecretsManager?: UserSecretsManager;
   memoryManager?: MemoryManager;
   cronService?: CronService;
   /** The full system prompt string — for /context stats */
@@ -67,10 +69,15 @@ export async function handleCommand(
       return handlePrompt(args, ctx);
     case "/context":
       return handleContext(ctx);
+    case "/secret":
+      return handleSecret(args, ctx);
     case "/cron":
       return handleCron(args, ctx);
     default:
-      return null;
+      return textResult(
+        ctx.session.id,
+        `Unknown command: \`${command}\`. Type \`/help\` to see available commands.`,
+      );
   }
 }
 
@@ -184,6 +191,9 @@ function handleHelp(ctx: CommandContext): CommandResult {
       "  `/prompt set <text>` — Set a custom system prompt",
       "  `/prompt clear` — Remove your custom system prompt",
       "  `/context` — Show prompt & context token usage",
+      "  `/secret set <key> <value>` — Store an encrypted secret (e.g. git_token)",
+      "  `/secret delete <key>` — Remove a secret",
+      "  `/secret list` — List your secret keys",
       "  `/cron` — Manage scheduled tasks (list/add/remove/enable/disable/run)",
       "  `/help` — Show this help message",
     ].join("\n"),
@@ -225,6 +235,52 @@ function handlePrompt(args: string[], ctx: CommandContext): CommandResult {
   }
 
   return textResult(session.id, "Usage: `/prompt [show | set <text> | clear]`");
+}
+
+// ---------------------------------------------------------------------------
+// User secrets commands
+// ---------------------------------------------------------------------------
+
+function handleSecret(args: string[], ctx: CommandContext): CommandResult {
+  const { session, userSecretsManager } = ctx;
+  if (!userSecretsManager) {
+    return textResult(session.id, "Secrets store not available (SECRET_KEY not configured).");
+  }
+
+  const sub = args[0]?.toLowerCase();
+
+  if (sub === "set") {
+    const key = args[1]?.trim();
+    const value = args.slice(2).join(" ").trim();
+    if (!key || !value) {
+      return textResult(session.id, "Usage: `/secret set <key> <value>`\nExample: `/secret set git_token ghp_xxxx`");
+    }
+    try {
+      userSecretsManager.set(session.userId, key, value);
+    } catch (err: any) {
+      return textResult(session.id, `Error: ${err.message}`);
+    }
+    return textResult(session.id, `Secret **${key}** saved.`);
+  }
+
+  if (sub === "delete") {
+    const key = args[1]?.trim();
+    if (!key) {
+      return textResult(session.id, "Usage: `/secret delete <key>`");
+    }
+    const deleted = userSecretsManager.delete(session.userId, key);
+    return textResult(session.id, deleted ? `Secret **${key}** deleted.` : `Secret **${key}** not found.`);
+  }
+
+  if (!sub || sub === "list") {
+    const keys = userSecretsManager.listKeys(session.userId);
+    if (keys.length === 0) {
+      return textResult(session.id, "No secrets stored. Use `/secret set <key> <value>` to add one.");
+    }
+    return textResult(session.id, `**Your secrets:**\n${keys.map((k) => `- ${k}`).join("\n")}`);
+  }
+
+  return textResult(session.id, "Usage: `/secret [list | set <key> <value> | delete <key>]`");
 }
 
 // ---------------------------------------------------------------------------

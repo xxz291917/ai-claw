@@ -40,7 +40,15 @@ curl -X POST "https://api.notion.com/v1/search" \
   -d '{"query": "page title"}'
 ```
 
-**Get page content (blocks):**
+**Get page content as Markdown (preferred):**
+
+```bash
+curl "https://api.notion.com/v1/pages/{page_id}/markdown" \
+  -H "Authorization: Bearer $NOTION_KEY" \
+  -H "Notion-Version: 2025-09-03"
+```
+
+**Get page content as blocks (raw):**
 
 ```bash
 curl "https://api.notion.com/v1/blocks/{page_id}/children" \

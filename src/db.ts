@@ -105,6 +105,14 @@ export function initDb(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS user_secrets (
+      user_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, key)
+    );
+
     CREATE TABLE IF NOT EXISTS workflow_executions (
       id TEXT PRIMARY KEY,
       workflow_name TEXT NOT NULL,

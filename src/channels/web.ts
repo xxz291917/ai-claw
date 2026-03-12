@@ -26,7 +26,7 @@ export class WebChannel implements Channel {
   constructor(private config: WebChannelConfig) {}
 
   async start(ctx: ChannelContext): Promise<void> {
-    const { app, sessionManager, eventLog, memoryManager, userSettingsManager } = ctx;
+    const { app, sessionManager, eventLog, memoryManager, userSettingsManager, userSecretsManager } = ctx;
     const { provider, skillsDirs } = this.config;
 
     // Lightweight auth check — no session creation
@@ -80,6 +80,7 @@ export class WebChannel implements Channel {
         skillsDirs,
         subagentManager: this.config.subagentManager,
         userSettingsManager,
+        userSecretsManager,
         memoryManager,
         cronService: this.config.cronService,
         systemPrompt: this.config.systemPrompt,

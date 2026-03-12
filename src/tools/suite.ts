@@ -17,8 +17,10 @@ import { createMemorySaveTool } from "./memory-save.js";
 import { createMemoryDeleteTool } from "./memory-delete.js";
 import { createMemoryListTool } from "./memory-list.js";
 import { createSpawnTool } from "./spawn.js";
+import { scanSkillDirs } from "../skills/loader.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { SubagentManager } from "../subagent/manager.js";
+import type { UserSecretsManager } from "../secrets/manager.js";
 import type { ToolDef } from "../chat/generic-provider.js";
 import type { UnifiedToolDef } from "./types.js";
 
@@ -50,7 +52,7 @@ export function buildToolSuite(
   env: ToolSuiteEnv,
   skillsDirs: string[],
   memoryManager?: MemoryManager,
-  opts?: { subagentManager?: SubagentManager; defaultProvider?: string; extraTools?: UnifiedToolDef[] },
+  opts?: { subagentManager?: SubagentManager; defaultProvider?: string; extraTools?: UnifiedToolDef[]; secretsManager?: UserSecretsManager },
 ): ToolSuiteResult {
   const toolDefs: UnifiedToolDef[] = [
     createWebFetchTool({ firecrawlApiKey: env.FIRECRAWL_API_KEY }),
@@ -74,6 +76,12 @@ export function buildToolSuite(
   }
 
   if (env.BASH_EXEC_ENABLED === "true") {
+    // Collect allowed secret keys from eligible skills' `requires-env` declarations
+    const allSkills = scanSkillDirs(skillsDirs);
+    const allowedSecretKeys = [
+      ...new Set(allSkills.filter((s) => s.eligibility.eligible).flatMap((s) => s.requirements.env)),
+    ];
+
     toolDefs.push(
       createBashExecTool({
         defaultCwd: env.WORKSPACE_DIR,
@@ -83,6 +91,8 @@ export function buildToolSuite(
           ?.split(",")
           .map((s) => s.trim())
           .filter(Boolean),
+        secretsManager: opts?.secretsManager,
+        allowedSecretKeys: allowedSecretKeys.length > 0 ? allowedSecretKeys : undefined,
       }),
     );
   }

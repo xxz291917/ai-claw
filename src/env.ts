@@ -52,6 +52,9 @@ const envSchema = z.object({
   /** Max estimated tokens before triggering history compaction. 0 = disabled (message count only). */
   CHAT_MAX_HISTORY_TOKENS: z.coerce.number().default(0),
 
+  // Encryption key for user secrets (required if users store git tokens etc.)
+  SECRET_KEY: z.string().optional(),
+
   // Lark bot (optional — enables POST /api/lark/webhook)
   LARK_APP_ID: z.string().optional(),
   LARK_APP_SECRET: z.string().optional(),

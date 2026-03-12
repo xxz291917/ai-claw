@@ -4,6 +4,7 @@ import type { ChatEvent } from "../chat/types.js";
 import type { SessionManager } from "../sessions/manager.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { UserSettingsManager } from "../settings/manager.js";
+import type { UserSecretsManager } from "../secrets/manager.js";
 import type { EventLog } from "../core/event-bus.js";
 
 export type InboundMessage = {
@@ -26,6 +27,7 @@ export type ChannelContext = {
   sessionManager: SessionManager;
   memoryManager?: MemoryManager;
   userSettingsManager?: UserSettingsManager;
+  userSecretsManager?: UserSecretsManager;
   eventLog: EventLog;
 };
 

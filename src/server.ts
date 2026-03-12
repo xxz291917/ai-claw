@@ -19,6 +19,7 @@ import { EventLog } from "./core/event-bus.js";
 import { SessionManager } from "./sessions/manager.js";
 import { MemoryManager } from "./memory/manager.js";
 import { UserSettingsManager } from "./settings/manager.js";
+import { UserSecretsManager } from "./secrets/manager.js";
 import { SubagentManager } from "./subagent/manager.js";
 import { loadMcpConfig } from "./mcp/config.js";
 import { bridgeMcpTools } from "./mcp/bridge.js";
@@ -41,6 +42,12 @@ export async function createApp(): Promise<{
   const sessionManager = new SessionManager(db);
   const memoryManager = new MemoryManager(db);
   const userSettingsManager = new UserSettingsManager(db);
+  const userSecretsManager = env.SECRET_KEY
+    ? new UserSecretsManager(db, env.SECRET_KEY)
+    : undefined;
+  if (userSecretsManager) {
+    log.info("[init] User secrets store enabled");
+  }
 
   const app = new Hono();
 
@@ -105,6 +112,7 @@ export async function createApp(): Promise<{
     subagentManager,
     defaultProvider: env.CHAT_PROVIDER,
     extraTools: [...mcpBridge.tools, ...workflowTools],
+    secretsManager: userSecretsManager,
   });
 
   // --- Chat Assistant ---
@@ -155,6 +163,7 @@ export async function createApp(): Promise<{
     eventLog,
     memoryManager,
     userSettingsManager,
+    userSecretsManager,
     handleMessage: async (msg, onEvent) => {
       return handleConversation({
         userId: msg.userId,
