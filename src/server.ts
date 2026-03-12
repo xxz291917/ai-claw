@@ -149,10 +149,11 @@ export async function createApp(): Promise<{
   }));
 
   // Optionally register lark channel
-  if (env.LARK_APP_ID && env.LARK_APP_SECRET) {
+  if (env.LARK_ENABLED === "true" && env.LARK_APP_ID && env.LARK_APP_SECRET) {
     channelManager.register(new LarkChannel({
       provider: chatProvider,
       lark: { appId: env.LARK_APP_ID, appSecret: env.LARK_APP_SECRET, verificationToken: env.LARK_VERIFICATION_TOKEN, openId: env.LARK_OPEN_ID },
+      mode: env.LARK_MODE,
       maxHistoryTokens: env.CHAT_MAX_HISTORY_TOKENS,
     }));
   }
@@ -191,9 +192,10 @@ export async function createApp(): Promise<{
   // Serve static files (chat UI)
   app.use("/*", serveStatic({ root: resolve(__dirname, "public") }));
 
-  // Graceful shutdown — stop cron and close MCP connections on process exit
+  // Graceful shutdown — stop cron, channels, and close MCP connections on process exit
   const shutdown = async () => {
     cronService.stop();
+    await channelManager.stopAll();
     log.info("[shutdown] Closing MCP connections...");
     await mcpBridge.close();
     log.info("[shutdown] Done.");
@@ -216,7 +218,7 @@ AI Claw 服务已启动
   地址:     http://localhost:${info.port}
   健康检查: http://localhost:${info.port}/health
   Chat:     http://localhost:${info.port}/
-  Lark:     ${env.LARK_APP_ID ? "POST http://localhost:" + info.port + "/api/lark/webhook" : "(disabled)"}
+  Lark:     ${env.LARK_ENABLED === "true" && env.LARK_APP_ID ? (env.LARK_MODE === "ws" ? "WebSocket (long connection)" : "POST http://localhost:" + info.port + "/api/lark/webhook") : "(disabled)"}
 `);
   });
 }

@@ -1,9 +1,11 @@
 /**
- * LarkChannel — Lark (Feishu) webhook channel.
+ * LarkChannel — Lark (Feishu) channel.
  *
- * Receives Feishu event callbacks, responds immediately with `{ code: 0 }`
- * (Lark requires < 3 s), then processes messages asynchronously using the
- * shared conversation pipeline.
+ * Supports two connection modes:
+ * - **ws** (default): WebSocket long connection via SDK's WSClient.
+ *   No public URL needed; SDK handles reconnect, heartbeat, and dedup.
+ * - **webhook**: Traditional HTTP callback on POST /api/lark/webhook.
+ *   Requires a public URL reachable by Lark servers.
  *
  * Group chat strategy:
  * - ALL messages are stored to the session for context accumulation
@@ -12,6 +14,7 @@
  * - @mentioned messages go through full handleConversation with AI compaction
  */
 
+import * as lark from "@larksuiteoapi/node-sdk";
 import type { Channel, ChannelContext } from "./types.js";
 import type { ChatProvider } from "../chat/types.js";
 import type { LarkConfig } from "../lark/client.js";
@@ -25,15 +28,20 @@ import { log } from "../logger.js";
 
 export type LarkChannelConfig = {
   provider: ChatProvider;
-  lark: LarkConfig;
+  lark?: LarkConfig;
+  mode: "webhook" | "ws";
   maxHistoryMessages?: number;
   maxHistoryTokens?: number;
   /** Max silent messages before sliding-window truncation. Default: 100. */
   maxSilentMessages?: number;
+  /** Override sendCard for testing. */
+  sendCard?: (chatId: string, markdown: string) => Promise<string>;
+  /** Override patchCard for testing. */
+  patchCard?: (messageId: string, markdown: string) => Promise<void>;
 };
 
 // ---------------------------------------------------------------------------
-// Message dedup cache — message_id -> timestamp, 5 min TTL
+// Message dedup cache (webhook mode only) — message_id -> timestamp, 5 min TTL
 // ---------------------------------------------------------------------------
 
 const DEDUP_TTL_MS = 5 * 60 * 1000;
@@ -60,7 +68,7 @@ function isDuplicate(messageId: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Lark event body types (minimal)
+// Lark event body types (minimal — shared by both modes)
 // ---------------------------------------------------------------------------
 
 type LarkUrlVerification = {
@@ -76,19 +84,21 @@ type LarkEventV2 = {
     event_type: string;
     token: string;
   };
-  event: {
-    sender: {
-      sender_id: { open_id: string };
-      sender_type: string;
-    };
-    message: {
-      message_id: string;
-      chat_id: string;
-      chat_type: string;
-      message_type: string;
-      content: string;
-      mentions?: Array<{ id: { open_id: string }; key: string }>;
-    };
+  event: LarkMessageEventData;
+};
+
+type LarkMessageEventData = {
+  sender: {
+    sender_id: { open_id: string };
+    sender_type: string;
+  };
+  message: {
+    message_id: string;
+    chat_id: string;
+    chat_type: string;
+    message_type: string;
+    content: string;
+    mentions?: Array<{ id: { open_id: string }; key: string }>;
   };
 };
 
@@ -100,18 +110,38 @@ export class LarkChannel implements Channel {
   readonly name = "lark";
   private client!: ReturnType<typeof createLarkClient>;
   private botOpenId?: string;
+  private wsClient?: lark.WSClient;
 
   constructor(private config: LarkChannelConfig) {}
 
   async start(ctx: ChannelContext): Promise<void> {
-    const { app } = ctx;
+    // Create Lark SDK client (for sending messages via REST API)
+    if (this.config.lark) {
+      this.client = createLarkClient(this.config.lark);
+      await this.resolveBotOpenId();
+    }
 
-    // Create Lark SDK client
-    this.client = createLarkClient(this.config.lark);
+    if (this.config.mode === "ws") {
+      await this.startWebSocket(ctx);
+    } else {
+      this.startWebhook(ctx);
+    }
+  }
 
-    // Use pre-configured open_id or fetch from API
-    if (this.config.lark.openId) {
-      this.botOpenId = this.config.lark.openId;
+  async stop(): Promise<void> {
+    if (this.wsClient) {
+      this.wsClient.close({ force: false });
+      log.info("[lark] WebSocket connection closed");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bot open_id resolution
+  // ---------------------------------------------------------------------------
+
+  private async resolveBotOpenId(): Promise<void> {
+    if (this.config.lark!.openId) {
+      this.botOpenId = this.config.lark!.openId;
       log.info(`[lark] bot open_id (from config): ${this.botOpenId}`);
     } else {
       try {
@@ -121,12 +151,44 @@ export class LarkChannel implements Channel {
         log.warn(`[lark] failed to fetch bot open_id: ${err.message} — group @mention detection disabled`);
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // WebSocket mode
+  // ---------------------------------------------------------------------------
+
+  private async startWebSocket(ctx: ChannelContext): Promise<void> {
+    const { appId, appSecret } = this.config.lark!;
+
+    const dispatcher = new lark.EventDispatcher({}).register({
+      "im.message.receive_v1": async (data: any) => {
+        this.handleEvent(ctx, data as LarkMessageEventData, false);
+      },
+    });
+
+    this.wsClient = new lark.WSClient({
+      appId,
+      appSecret,
+      domain: lark.Domain.Lark,
+      loggerLevel: lark.LoggerLevel.info,
+    });
+
+    await this.wsClient.start({ eventDispatcher: dispatcher });
+    log.info("[lark] WebSocket long connection established");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Webhook mode
+  // ---------------------------------------------------------------------------
+
+  private startWebhook(ctx: ChannelContext): void {
+    const { app } = ctx;
 
     app.post("/api/lark/webhook", async (c) => {
       const body = await c.req.json().catch(() => ({}));
 
       // 1. Token verification — reject forged requests
-      const { verificationToken } = this.config.lark;
+      const verificationToken = this.config.lark?.verificationToken;
       const incomingToken = body.token ?? body.header?.token;
       if (verificationToken && incomingToken !== verificationToken) {
         log.warn("[lark] webhook token mismatch — rejecting request");
@@ -145,73 +207,70 @@ export class LarkChannel implements Channel {
       }
 
       const event = body as LarkEventV2;
-      const { message, sender } = event.event;
-      log.debug(`[lark] webhook: chat_type=${message.chat_type} message_id=${message.message_id} chat_id=${message.chat_id}`);
+      log.debug(`[lark] webhook: chat_type=${event.event.message.chat_type} message_id=${event.event.message.message_id}`);
 
-      // 3. Only handle text messages
-      if (message.message_type !== "text") {
-        return c.json({ code: 0 });
-      }
-
-      // 4. Dedup by message_id
-      if (isDuplicate(message.message_id)) {
-        return c.json({ code: 0 });
-      }
-
-      // 5. Extract text content
-      let text: string;
-      try {
-        const parsed = JSON.parse(message.content);
-        text = parsed.text ?? "";
-      } catch {
-        text = "";
-      }
-
-      if (!text.trim()) {
-        return c.json({ code: 0 });
-      }
-
-      // 6. Determine user identity
-      const openId = sender.sender_id.open_id;
-      const chatId = message.chat_id;
-      const isGroup = message.chat_type === "group";
-      // Group chat: shared team identity (shared session/workflow/memory)
-      // P2P chat: individual identity (isolated session/memory)
-      const userId = isGroup
-        ? `lark-group:${chatId}`
-        : `lark:${openId}`;
-
-      // 7. Group chat: check if bot is @mentioned
-      const isMentioned = isGroup && this.botOpenId
-        ? message.mentions?.some((m) => m.id?.open_id === this.botOpenId) ?? false
-        : !isGroup; // P2P always treated as "mentioned"
-
-      // Strip @mention placeholders (e.g. @_user_1) from message text
-      if (message.mentions?.length) {
-        for (const m of message.mentions) {
-          if (m.key) text = text.replace(m.key, "");
-        }
-        text = text.trim();
-      }
-
-      if (!text.trim()) {
-        return c.json({ code: 0 });
-      }
-
-      if (isMentioned) {
-        // @mentioned or P2P → full AI response
-        this.processMessage(ctx, userId, chatId, text).catch((err) => {
-          log.error("[lark] async processing error:", err);
-        });
-      } else {
-        // Group message without @mention → silent store only
-        this.storeSilentMessage(ctx, userId, chatId, openId, text).catch((err) => {
-          log.error("[lark] silent store error:", err);
-        });
-      }
+      // 4. Dedup + handle
+      this.handleEvent(ctx, event.event, true);
 
       return c.json({ code: 0 });
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Unified event handler (shared by both modes)
+  // ---------------------------------------------------------------------------
+
+  private handleEvent(ctx: ChannelContext, data: LarkMessageEventData, needDedup: boolean): void {
+    const { message, sender } = data;
+
+    // Only handle text messages
+    if (message.message_type !== "text") return;
+
+    // Webhook mode needs manual dedup; ws mode dedup is handled by SDK
+    if (needDedup && isDuplicate(message.message_id)) return;
+
+    // Extract text content
+    let text: string;
+    try {
+      const parsed = JSON.parse(message.content);
+      text = parsed.text ?? "";
+    } catch {
+      text = "";
+    }
+
+    if (!text.trim()) return;
+
+    // Determine user identity
+    const openId = sender.sender_id.open_id;
+    const chatId = message.chat_id;
+    const isGroup = message.chat_type === "group";
+    // Group chat: shared team identity; P2P chat: individual identity
+    const userId = isGroup ? `lark-group:${chatId}` : `lark:${openId}`;
+
+    // Group chat: check if bot is @mentioned
+    const isMentioned = isGroup && this.botOpenId
+      ? message.mentions?.some((m) => m.id?.open_id === this.botOpenId) ?? false
+      : !isGroup; // P2P always treated as "mentioned"
+
+    // Strip @mention placeholders (e.g. @_user_1) from message text
+    if (message.mentions?.length) {
+      for (const m of message.mentions) {
+        if (m.key) text = text.replace(m.key, "");
+      }
+      text = text.trim();
+    }
+
+    if (!text.trim()) return;
+
+    if (isMentioned) {
+      this.processMessage(ctx, userId, chatId, text).catch((err) => {
+        log.error("[lark] async processing error:", err);
+      });
+    } else {
+      this.storeSilentMessage(ctx, userId, chatId, openId, text).catch((err) => {
+        log.error("[lark] silent store error:", err);
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -268,7 +327,9 @@ export class LarkChannel implements Channel {
     const { client } = this;
 
     // 1. Send "thinking" card
-    const cardMessageId = await sendCard(client, chatId, "思考中...");
+    const doSend = this.config.sendCard ?? ((cid, md) => sendCard(client, cid, md));
+    const doPatch = this.config.patchCard ?? ((mid, md) => patchCard(client, mid, md));
+    const cardMessageId = await doSend(chatId, "思考中...");
 
     // 2. Find or reuse existing session
     const existingSession = sessionManager.findActive(userId, "lark");
@@ -297,11 +358,11 @@ export class LarkChannel implements Channel {
 
       // 5. Patch the card with the final reply
       const reply = result.text || result.error || "（无回复）";
-      await patchCard(client, cardMessageId, reply);
+      await doPatch(cardMessageId, reply);
     } catch (err: any) {
       log.error("[lark] conversation error:", err.message ?? err);
       try {
-        await patchCard(client, cardMessageId, `出错了: ${err.message ?? "unknown error"}`);
+        await doPatch(cardMessageId, `出错了: ${err.message ?? "unknown error"}`);
       } catch {
         /* best-effort */
       }

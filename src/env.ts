@@ -55,11 +55,14 @@ const envSchema = z.object({
   // Encryption key for user secrets (required if users store git tokens etc.)
   SECRET_KEY: z.string().optional(),
 
-  // Lark bot (optional — enables POST /api/lark/webhook)
+  // Lark bot (optional — enables Lark channel)
+  LARK_ENABLED: z.enum(["true", "false"]).default("false"),
   LARK_APP_ID: z.string().optional(),
   LARK_APP_SECRET: z.string().optional(),
   LARK_VERIFICATION_TOKEN: z.string().optional(),
   LARK_OPEN_ID: z.string().optional(),
+  /** Connection mode: "ws" (WebSocket long connection) or "webhook" (HTTP callback). */
+  LARK_MODE: z.enum(["webhook", "ws"]).default("ws"),
 });
 
 export type Env = z.infer<typeof envSchema>;

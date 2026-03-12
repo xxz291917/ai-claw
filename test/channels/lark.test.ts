@@ -30,6 +30,7 @@ function setup(events: ChatEvent[], extraConfig?: Partial<LarkChannelConfig>) {
     provider,
     sendCard,
     patchCard,
+    mode: "webhook",
     ...extraConfig,
   });
 
