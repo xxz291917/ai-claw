@@ -8,17 +8,63 @@ A self-hosted AI assistant you can deploy for your team. Multi-user auth, sandbo
 - **Companies** deploying an internal ChatGPT/Claude alternative with tool access (bash, file I/O, web search, Sentry, GitHub, etc.)
 - **Developers** building on top of a multi-provider AI engine — swap between Claude, DeepSeek, Kimi, or any OpenAI-compatible API without changing code
 
+## Multi-User Support
+
+AI Claw is designed for shared team deployment. Every user gets **isolated sessions, memory, and conversation history** — one service serves the whole team.
+
+### How it works
+
+```
+                 ┌─────────────────────────────────────────────┐
+                 │              AI Claw Server                  │
+  Alice ──────►  │  ┌─────────┐  ┌────────┐  ┌─────────────┐  │
+  (token A)      │  │ Session  │  │ Memory │  │ Conversation │  │
+                 │  │ (Alice)  │  │(Alice) │  │   History    │  │
+  Bob ────────►  │  ├─────────┤  ├────────┤  │  (per-user)  │  │
+  (token B)      │  │ Session  │  │ Memory │  │              │  │
+                 │  │  (Bob)   │  │ (Bob)  │  │              │  │
+  Lark Group ─►  │  ├─────────┤  ├────────┤  │              │  │
+  (@mention)     │  │ Session  │  │ Memory │  │              │  │
+                 │  │ (group)  │  │(group) │  │              │  │
+                 │  └─────────┘  └────────┘  └─────────────┘  │
+                 └─────────────────────────────────────────────┘
+```
+
+**Setup** — one env var, no database migration:
+
+```bash
+# Add users as name:token pairs
+CHAT_USERS=alice:sk-alice-secret,bob:sk-bob-secret
+
+# Omit CHAT_USERS for anonymous single-user mode (great for personal use)
+```
+
+**What each user gets:**
+
+| Feature | Isolation level |
+|---------|----------------|
+| **Authentication** | Bearer token per user, verified on every request |
+| **Sessions** | Each user has independent sessions, keyed by `userId + channel` |
+| **Conversation history** | Fully isolated — users never see each other's chats |
+| **Memory** | Per-user FTS5 full-text search (CJK-aware). AI remembers preferences, facts, and context per user |
+| **Concurrency** | Per-session locking — one user's slow request won't block another's |
+| **Lark (飞书)** | P2P: each user identified by `lark:<openId>`. Group chats: shared identity via `lark-group:<chatId>` |
+
+**Web UI login flow:**
+
+1. User opens the Web UI → auth modal prompts for token
+2. Token stored in `localStorage`, sent as `Authorization: Bearer <token>` on every request
+3. Server resolves token → userId, all subsequent operations scoped to that user
+
 ## Highlights
 
 | | |
 |---|---|
-| **Multi-user** | Token-based auth (`CHAT_USERS=alice:tok1,bob:tok2`), per-user sessions, memory (FTS5), and isolated conversation history |
 | **Multi-provider** | Claude Agent SDK + any OpenAI-compatible API. Register extra providers via `PROVIDER_{NAME}_*` env vars — no code changes |
-| **Multi-channel** | Web UI (SSE streaming) and Lark (飞书) bot, same conversation engine |
+| **Multi-channel** | Web UI (SSE streaming) and Lark (飞书) bot — same conversation engine |
 | **Tools** | Sandboxed bash, file read/write, web fetch/search, Sentry queries, Claude Code delegation, MCP servers |
 | **Skills** | Markdown-based skill system with YAML frontmatter, eligibility checking, and on-demand loading |
 | **Scheduled tasks** | Built-in cron engine (`at` / `every` / `cron`), SQLite persistence, backoff, max concurrency |
-| **Memory** | Per-user full-text search (FTS5, CJK-aware), auto-extracted from conversations |
 | **Security** | Workspace sandbox, command allowlist, sensitive file blocklist, env var stripping |
 
 ## Quick Start
