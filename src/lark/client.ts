@@ -19,13 +19,33 @@ export function createLarkClient(config: LarkConfig): LarkClient {
   });
 }
 
+/**
+ * Lark cards support at most 3 tables. Convert excess markdown tables
+ * to plain-text aligned format so the card doesn't get rejected.
+ */
+const LARK_TABLE_LIMIT = 3;
+
+function flattenExcessTables(text: string): string {
+  let count = 0;
+  return text.replace(
+    // Match a full markdown table (header + separator + rows)
+    /(?:^|\n)(\|[^\n]+\|\n\|[-| :]+\|\n(?:\|[^\n]+\|\n?)*)/g,
+    (match) => {
+      count++;
+      if (count <= LARK_TABLE_LIMIT) return match;
+      // Convert table to plain text: strip leading/trailing pipes, align with spaces
+      return match.replace(/^\||\|$/gm, "").replace(/\|/g, "  ");
+    },
+  );
+}
+
 /** Build a markdown card JSON for interactive messages. */
 export function buildMarkdownCard(text: string): string {
   return JSON.stringify({
     schema: "2.0",
     config: { wide_screen_mode: true },
     body: {
-      elements: [{ tag: "markdown", content: text }],
+      elements: [{ tag: "markdown", content: flattenExcessTables(text) }],
     },
   });
 }
